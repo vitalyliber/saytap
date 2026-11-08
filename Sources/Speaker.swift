@@ -14,6 +14,11 @@ final class Speaker: @unchecked Sendable {
     private var note: String? {
         didSet { if note != oldValue { onNote?(note) } }
     }
+    // Called when audio starts and when it ends or stops.
+    var onPlaying: ((Bool) -> Void)?
+    private var playing = false {
+        didSet { if playing != oldValue { onPlaying?(playing) } }
+    }
     private var phonon: Task<Phonon, Error>?
     private var generation: Task<Void, Never>?
     private let engine = AVAudioEngine()
@@ -86,6 +91,7 @@ final class Speaker: @unchecked Sendable {
         generation = nil
         samples = []
         node.stop()
+        playing = false
     }
 
     private func fail(_ error: Error) {
@@ -97,6 +103,7 @@ final class Speaker: @unchecked Sendable {
     private func enqueue(_ chunk: [Float], for current: Int) {
         guard request == current, let buffer = buffer(chunk) else { return }
         samples += chunk
+        playing = true
         timePitch.rate = speed.rate
         if !engine.isRunning { try? engine.start() }
         node.scheduleBuffer(buffer)
@@ -109,7 +116,11 @@ final class Speaker: @unchecked Sendable {
         cached = (key, samples)
         note = nil
         node.scheduleBuffer(marker, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async { if self?.request == current { self?.engine.pause() } }
+            DispatchQueue.main.async {
+                guard let self, self.request == current else { return }
+                self.engine.pause()
+                self.playing = false
+            }
         }
     }
 

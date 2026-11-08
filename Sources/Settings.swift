@@ -70,6 +70,11 @@ let POPUP_LIFETIME: TimeInterval = 10
 let POPUP_WIDTH: CGFloat = 340
 let POPUP_PADDING: CGFloat = 14
 let POPUP_CURSOR_OFFSET: CGFloat = 16
+let POPUP_QUICK_FADE: TimeInterval = 0.12
+let POPUP_SLOW_FADE: TimeInterval = 0.35
+let POPUP_FADE_OUT: TimeInterval = 0.15
+let POPUP_FADE_OUT_KEY = "fadeOut"
+let POPUP_FADE_IN_KEY = "fadeIn"
 let MAX_DICTIONARY_TERMS = 6
 let ESCAPE_KEY_CODE = UInt16(kVK_Escape)
 

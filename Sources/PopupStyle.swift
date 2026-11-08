@@ -16,6 +16,8 @@ struct PopupStyle {
     let speakerSymbol: String
     let phonetic: (prefix: String, suffix: String)
     let italicPartOfSpeech: Bool
+    // The pop-up fades in without moving; only its speaker icon animates.
+    let fadeIn: TimeInterval
 }
 
 extension NSColor {
@@ -28,18 +30,22 @@ extension NSColor {
 let POPUP_STYLES = [
     PopupStyle(title: "Playful", material: nil, background: [NSColor(rgb: 0x7B5CFF), NSColor(rgb: 0xFF5FA2)], border: nil,
                cornerRadius: 20, design: .rounded, wordSize: 21, text: .white, secondary: .white.withAlphaComponent(0.78),
-               accent: .white, speakerSymbol: "speaker.wave.3.fill", phonetic: ("[", "]"), italicPartOfSpeech: false),
+               accent: .white, speakerSymbol: "speaker.wave.3.fill", phonetic: ("[", "]"), italicPartOfSpeech: false,
+               fadeIn: POPUP_QUICK_FADE),
     PopupStyle(title: "Standard", material: .popover, background: [], border: nil,
                cornerRadius: 12, design: .default, wordSize: 18, text: .labelColor, secondary: .secondaryLabelColor,
-               accent: .controlAccentColor, speakerSymbol: "speaker.wave.2.fill", phonetic: ("[", "]"), italicPartOfSpeech: false),
+               accent: .controlAccentColor, speakerSymbol: "speaker.wave.2.fill", phonetic: ("[", "]"), italicPartOfSpeech: false,
+               fadeIn: POPUP_QUICK_FADE),
     PopupStyle(title: "Minimal", material: nil, background: [.windowBackgroundColor], border: .separatorColor,
                cornerRadius: 8, design: .default, wordSize: 17, text: .labelColor, secondary: .secondaryLabelColor,
-               accent: .secondaryLabelColor, speakerSymbol: "speaker.fill", phonetic: ("", ""), italicPartOfSpeech: false),
+               accent: .secondaryLabelColor, speakerSymbol: "speaker.wave.1.fill", phonetic: ("", ""), italicPartOfSpeech: false,
+               fadeIn: POPUP_QUICK_FADE),
     PopupStyle(title: "Formal", material: nil, background: [NSColor(rgb: 0xFBF7EE), NSColor(rgb: 0xF3ECDC)], border: NSColor(rgb: 0xC9BC9C),
                cornerRadius: 3, design: .serif, wordSize: 20, text: NSColor(rgb: 0x2B2620), secondary: NSColor(rgb: 0x7D705B),
-               accent: NSColor(rgb: 0x7A5A2E), speakerSymbol: "speaker.wave.1", phonetic: ("/", "/"), italicPartOfSpeech: true),
+               accent: NSColor(rgb: 0x7A5A2E), speakerSymbol: "speaker.wave.1", phonetic: ("/", "/"), italicPartOfSpeech: true,
+               fadeIn: POPUP_SLOW_FADE),
 ]
-let DEFAULT_POPUP_STYLE = "Standard"
+let DEFAULT_POPUP_STYLE = "Playful"
 let POPUP_STYLE_KEY = "popupStyle"
 let POPUP_BORDER_WIDTH: CGFloat = 1
 

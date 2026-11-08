@@ -4,11 +4,29 @@ final class PopupPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
+// The replay control: an image view, because symbol effects (the speaking waves) only run in one.
+final class SpeakerIcon: NSImageView {
+    var onClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
+    }
+}
+
 final class Popup {
     var onReplay: (() -> Void)?
     // A line about speech under every pop-up while it's set; the open pop-up updates when it changes.
     var speechNote: String? {
-        didSet { if panel.isVisible, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) } }
+        didSet { if isOpen, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) } }
+    }
+    // The speaker icon's waves move while this is set.
+    var speaking = false {
+        didSet { if speaking != oldValue { animateSpeaker() } }
     }
 
     var style = POPUP_STYLES.first { $0.title == DEFAULT_POPUP_STYLE }! {
@@ -20,6 +38,10 @@ final class Popup {
     private var hideTimer: Timer?
     private var monitors: [Any] = []
     private var shown: (word: String, translation: Translation?, status: String?)?
+    private weak var speakerIcon: SpeakerIcon?
+    // Set while the pop-up fades out; a pop-up shown meanwhile comes back in.
+    private var closing = false
+    private var isOpen: Bool { panel.isVisible && !closing }
 
     init() {
         panel = PopupPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -52,7 +74,7 @@ final class Popup {
             stack.widthAnchor.constraint(equalToConstant: POPUP_WIDTH),
         ])
         panel.contentView = background
-        if panel.isVisible, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) }
+        if isOpen, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) }
     }
 
     // An empty word shows only the status, for messages that aren't about a word.
@@ -74,18 +96,72 @@ final class Popup {
         panel.contentView?.layoutSubtreeIfNeeded()
         let size = panel.contentView!.fittingSize
         let origin = point.map { position(for: size, near: $0) } ?? panel.frame.origin
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
-        // The shadow follows the window's opaque pixels, so it's rebuilt for the rounded corners at this size.
-        panel.invalidateShadow()
-        panel.orderFrontRegardless()
+        let frame = NSRect(origin: origin, size: size)
+        if isOpen {
+            panel.setFrame(frame, display: true)
+            // The shadow follows the window's opaque pixels, so it's rebuilt for the rounded corners at this size.
+            panel.invalidateShadow()
+        } else {
+            appear(in: frame)
+        }
         startHiding()
     }
 
     func hide() {
-        panel.orderOut(nil)
         hideTimer?.invalidate()
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
+        guard isOpen, let layer = panel.contentView?.layer else { return }
+        closing = true
+        // Faded by Core Animation, which keeps time even when macOS slows the timers of a background app such as
+        // this one; the window's own alpha animation starts late then. The shadow can't fade with the layer.
+        panel.hasShadow = false
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        fade.duration = POPUP_FADE_OUT
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, self.closing else { return }
+            self.closing = false
+            self.panel.orderOut(nil)
+            layer.removeAnimation(forKey: POPUP_FADE_OUT_KEY)
+        }
+        layer.add(fade, forKey: POPUP_FADE_OUT_KEY)
+        CATransaction.commit()
+    }
+
+    // Fades in like hide() fades out; the shadow comes on once the content is there.
+    private func appear(in frame: NSRect) {
+        closing = false
+        panel.hasShadow = false
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        guard let layer = panel.contentView?.layer else { return }
+        layer.removeAnimation(forKey: POPUP_FADE_OUT_KEY)
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = style.fadeIn
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, !self.closing else { return }
+            self.panel.hasShadow = true
+            self.panel.invalidateShadow()
+        }
+        layer.add(fade, forKey: POPUP_FADE_IN_KEY)
+        CATransaction.commit()
+    }
+
+    private func animateSpeaker() {
+        guard let speakerIcon else { return }
+        if speaking && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            speakerIcon.addSymbolEffect(.variableColor.iterative, options: .repeating)
+        } else {
+            speakerIcon.removeAllSymbolEffects()
+        }
     }
 
     private func startHiding() {
@@ -116,10 +192,12 @@ final class Popup {
     }
 
     private func header(word: String, phonetic: String?) -> NSView {
-        let replay = NSButton(image: NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: "Say again")!,
-                              target: self, action: #selector(replay))
-        replay.isBordered = false
+        let replay = SpeakerIcon(image: NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: "Say again")!)
+        replay.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
         replay.contentTintColor = style.accent
+        replay.onClick = { [weak self] in self?.onReplay?() }
+        speakerIcon = replay
+        animateSpeaker()
 
         let title = label(word, size: style.wordSize, weight: .semibold)
         title.lineBreakMode = .byTruncatingTail
@@ -166,5 +244,4 @@ final class Popup {
         return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size, weight: weight)
     }
 
-    @objc private func replay() { onReplay?() }
 }
