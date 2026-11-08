@@ -6,7 +6,7 @@ The double tap only counts when ⌥ is pressed on its own: two quick taps, each 
 
 - Click 🔊 in the pop-up to hear the word again.
 - Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Long phrases and translations wrap, so they show in full. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
-- Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
+- Pick the voice speed in the menu bar icon → **Speed**: 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2, as on YouTube. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
 - Pick the language to translate into in the menu bar icon → **Translate to**. By default it's the first language other than English in System Settings → General → Language & Region. Languages whose dictionary isn't downloaded are marked; choosing one starts the download (about a minute) and offers macOS's dialog to download it for offline translation. Until they're there, the menu shows what's missing under Translate to.
 - Words and phrasal verbs come from the bilingual Oxford dictionary that ships with macOS: translations grouped by part of speech, with transcription. It works offline and answers instantly.

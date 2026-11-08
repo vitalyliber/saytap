@@ -27,15 +27,18 @@ struct SpeechSpeed {
     let rate: Float
 }
 
-// Applied when playing, with the pitch kept: the Core ML model has no speed condition.
+// YouTube's playback speeds. Applied when playing, with the pitch kept: the Core ML model has no speed condition.
 let SPEECH_SPEEDS = [
-    SpeechSpeed(title: "Very slow", rate: 0.7),
-    SpeechSpeed(title: "Slow", rate: 0.85),
+    SpeechSpeed(title: "0.25", rate: 0.25),
+    SpeechSpeed(title: "0.5", rate: 0.5),
+    SpeechSpeed(title: "0.75", rate: 0.75),
     SpeechSpeed(title: "Normal", rate: 1),
-    SpeechSpeed(title: "Fast", rate: 1.15),
-    SpeechSpeed(title: "Very fast", rate: 1.35),
+    SpeechSpeed(title: "1.25", rate: 1.25),
+    SpeechSpeed(title: "1.5", rate: 1.5),
+    SpeechSpeed(title: "1.75", rate: 1.75),
+    SpeechSpeed(title: "2", rate: 2),
 ]
-let DEFAULT_SPEED_INDEX = 2
+let DEFAULT_SPEED_INDEX = 3
 let SPEED_KEY = "speed"
 let SPEED_SAMPLE = "This is how fast I speak."
 let VOICE_KEY = "voice"
