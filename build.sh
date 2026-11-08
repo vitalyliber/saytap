@@ -4,8 +4,16 @@ set -euo pipefail
 cd "${0:A:h}"
 
 APP="$HOME/Applications/Word Popup.app"
+CERTIFICATE="Word Popup Signing"
+MINIMUM_MACOS="14.0"
 
-swiftc -O -swift-version 5 -target arm64-apple-macosx14.0 \
+if ! security find-certificate -c "$CERTIFICATE" >/dev/null 2>&1; then
+  echo "No \"$CERTIFICATE\" certificate in the keychain. Create it first: see Install in README.md." >&2
+  exit 1
+fi
+
+mkdir -p build
+swiftc -O -swift-version 5 -target "$(uname -m)-apple-macosx$MINIMUM_MACOS" \
   -framework Cocoa -framework Carbon -framework AVFoundation \
   -o build/WordPopup Sources/main.swift
 
@@ -16,7 +24,7 @@ cp Info.plist "$APP/Contents/Info.plist"
 cp build/WordPopup "$APP/Contents/MacOS/WordPopup"
 # A real certificate keeps the Accessibility permission across rebuilds; an ad-hoc signature
 # is identified by its hash, so macOS would forget the permission every time.
-codesign --force --sign "Word Popup Signing" "$APP"
+codesign --force --sign "$CERTIFICATE" "$APP"
 
 open "$APP"
 echo "Installed $APP"
