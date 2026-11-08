@@ -252,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(loginItem)
         menu.addItem(accessibilityItem)
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Saytap Website", action: #selector(openWebsite), keyEquivalent: "")
         menu.addItem(withTitle: "Quit Saytap", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
         item.menu = menu
@@ -323,5 +324,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openAccessibilitySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    @objc private func openWebsite() {
+        NSWorkspace.shared.open(WEBSITE_URL)
     }
 }

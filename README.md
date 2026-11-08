@@ -149,6 +149,7 @@ Everything is in the menu bar icon:
 | **Speed** | 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2. |
 | **Style** | Playful (the default), Standard, Minimal or Formal. Choosing one shows the last word in it. |
 | **Launch at Login** | Starts Saytap with the Mac. |
+| **Saytap Website** | Opens this project's website. |
 
 ## Troubleshooting
 
