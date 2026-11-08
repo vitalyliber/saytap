@@ -69,7 +69,6 @@ let COPY_POLL_INTERVAL: TimeInterval = 0.02
 let POPUP_LIFETIME: TimeInterval = 10
 let POPUP_WIDTH: CGFloat = 340
 let POPUP_PADDING: CGFloat = 14
-let POPUP_HEADER_SPACING: CGFloat = 6
 // Longer selections are phrases, set in this size instead of the style's word size.
 let POPUP_PHRASE_LENGTH = 30
 let POPUP_PHRASE_SIZE: CGFloat = 17

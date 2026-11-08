@@ -5,8 +5,7 @@ final class PopupPanel: NSPanel {
 
     override var canBecomeKey: Bool { false }
 
-    // A click anywhere on the card says the word again, so the speaker button inside doesn't also get it.
-    // VoiceOver still presses that button.
+    // A click anywhere on the card says the word again. VoiceOver presses the heading instead.
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown: break
@@ -178,22 +177,32 @@ final class Popup {
         return NSPoint(x: max(bounds.minX, x), y: min(y, bounds.maxY - size.height))
     }
 
+    // The speaker icon is the heading's first character, so a phrase's later lines start at the left edge
+    // instead of under the icon.
     private func header(word: String, phonetic: String?) -> NSView {
-        let replay = NSButton(image: NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: "Say again")!,
-                              target: self, action: #selector(replay))
-        replay.isBordered = false
-        replay.contentTintColor = style.accent
-
         // A phrase wraps in full, in a smaller size than a word so a few lines don't fill the screen.
         let size = word.count > POPUP_PHRASE_LENGTH ? POPUP_PHRASE_SIZE : style.wordSize
-        let title = label(word, size: size, weight: .semibold)
-        let row = NSStackView(views: [replay, title])
-        row.spacing = POPUP_HEADER_SPACING
-        row.alignment = .firstBaseline
-        title.preferredMaxLayoutWidth = POPUP_WIDTH - 2 * POPUP_PADDING - replay.fittingSize.width - POPUP_HEADER_SPACING
-        guard let phonetic, !phonetic.isEmpty else { return row }
+        let titleFont = font(size: size, weight: .semibold)
+        let symbol = NSImage.SymbolConfiguration(pointSize: size, weight: .regular, scale: .small)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [style.accent]))
+        let speaker = NSTextAttachment()
+        speaker.image = NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: nil)!.withSymbolConfiguration(symbol)
+        let iconSize = speaker.image!.size
+        speaker.bounds = NSRect(x: 0, y: (titleFont.capHeight - iconSize.height) / 2, width: iconSize.width, height: iconSize.height)
 
-        let column = NSStackView(views: [row, label(style.phonetic.prefix + phonetic + style.phonetic.suffix, size: 13, color: style.secondary)])
+        // A no-break space keeps the icon on the word's line.
+        let text = NSMutableAttributedString(attachment: speaker)
+        text.append(NSAttributedString(string: "\u{00A0}" + word))
+        text.addAttributes([.font: titleFont, .foregroundColor: style.text], range: NSRange(location: 0, length: text.length))
+        let title = HeadingLabel(wrappingLabelWithString: "")
+        title.attributedStringValue = text
+        title.isSelectable = false
+        title.preferredMaxLayoutWidth = POPUP_WIDTH - 2 * POPUP_PADDING
+        title.setAccessibilityLabel("Say again: \(word)")
+        title.onPress = { [weak self] in self?.onReplay?() }
+        guard let phonetic, !phonetic.isEmpty else { return title }
+
+        let column = NSStackView(views: [title, label(style.phonetic.prefix + phonetic + style.phonetic.suffix, size: 13, color: style.secondary)])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 2
@@ -230,6 +239,16 @@ final class Popup {
         if italic { descriptor = descriptor.withSymbolicTraits(.italic) }
         return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size, weight: weight)
     }
+}
 
-    @objc private func replay() { onReplay?() }
+// The heading with the speaker icon in it. VoiceOver presses it like the button it looks like.
+final class HeadingLabel: NSTextField {
+    var onPress: (() -> Void)?
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return true
+    }
 }
