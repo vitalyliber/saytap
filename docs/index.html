@@ -121,11 +121,10 @@
     .install h2 { color: #fff; }
     .install p { color: rgba(255, 255, 255, 0.85); margin: 0 0 24px; }
     .install .button { background: #fff; color: #5a3ee0; }
-    pre {
-      margin: 0; padding: 20px 22px; border-radius: 16px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
-      background: rgba(20, 10, 50, 0.35); color: #fff; font: 14.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+    .install ol {
+      margin: 0; padding: 20px 22px 20px 44px; border-radius: 16px; background: rgba(20, 10, 50, 0.35); color: #fff; line-height: 1.6;
     }
-    pre .comment { color: rgba(255, 255, 255, 0.6); }
+    .install li + li { margin-top: 8px; }
 
     footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
     footer a { color: var(--muted); }
@@ -158,13 +157,13 @@
           Saytap says it out loud and shows its translation right next to the cursor.
         </p>
         <div class="buttons">
-          <a class="button primary" href="https://github.com/vitalyliber/saytap#install">
+          <a class="button primary" href="https://github.com/vitalyliber/saytap/releases/latest/download/Saytap.dmg">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg>
-            Download on GitHub
+            Download for Mac
           </a>
           <a class="button secondary" href="https://github.com/vitalyliber/saytap">View source</a>
         </div>
-        <p class="note">Free and open source · macOS 26 or later · Apple silicon</p>
+        <p class="note">Free and open source · macOS 26 or later · Apple silicon · 140 MB</p>
       </div>
       <div class="demo">
         <p class="demo-text">Ships sheltered in the <mark>harbour</mark> until the storm passed.</p>
@@ -263,13 +262,14 @@
       <div class="install">
         <div>
           <h2>Get Saytap</h2>
-          <p>Saytap is free and open source. You build it on your own Mac and sign it with your own certificate, so macOS trusts it with the selected text. The guide on GitHub walks you, or your AI coding agent, through it in about ten minutes.</p>
-          <a class="button" href="https://github.com/vitalyliber/saytap#install">Download on GitHub</a>
+          <p>Free and open source, signed and notarized by Apple. Prefer to build it yourself? <a href="https://github.com/vitalyliber/saytap#build-from-source">The guide on GitHub</a> walks you, or your AI coding agent, through it.</p>
+          <a class="button" href="https://github.com/vitalyliber/saytap/releases/latest/download/Saytap.dmg">Download for Mac</a>
         </div>
-        <pre><span class="comment"># after creating the signing certificate</span>
-git clone https://github.com/vitalyliber/saytap.git
-cd saytap
-./build.sh</pre>
+        <ol>
+          <li>Open <b>Saytap.dmg</b> and drag Saytap into Applications.</li>
+          <li>Start Saytap and switch it on in Privacy &amp; Security → Accessibility when it asks.</li>
+          <li>Select a word anywhere and tap ⌥ twice.</li>
+        </ol>
       </div>
     </div>
   </section>

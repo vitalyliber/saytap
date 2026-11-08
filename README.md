@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/vitalyliber/saytap/releases/latest/download/Saytap.dmg">Download</a> ·
   <a href="https://vitalyliber.github.io/saytap/">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#how-it-works">How it works</a>
@@ -49,13 +50,23 @@ The double tap only counts when ⌥ is pressed on its own: two quick taps, each 
 
 ## Install
 
-There's no ready-made download. Without a paid Apple Developer ID, macOS keeps the Accessibility permission only for an app signed with a certificate the Mac trusts. So you build Saytap on your own Mac and sign it with a certificate you create in step 2. It takes about ten minutes, most of it downloads.
+### Download
+
+Download [Saytap.dmg](https://github.com/vitalyliber/saytap/releases/latest/download/Saytap.dmg) (140 MB), open it and drag Saytap into Applications. It's signed with a Developer ID and notarized by Apple. It needs macOS 26 or later on Apple silicon.
+
+Start Saytap from Applications. On the first launch it asks for Accessibility, which it needs to read the selected text: click **Open System Settings** and switch **Saytap** on in Privacy & Security → Accessibility. Then pick your language in the menu bar icon → **Translate to** (see [step 6](#6-pick-the-language)), select a word anywhere and tap ⌥ twice.
+
+### Build from source
+
+Without a paid Apple Developer ID, macOS keeps the Accessibility permission only for an app signed with a certificate the Mac trusts. So to build Saytap yourself, you sign it with a certificate you create in step 2. It takes about ten minutes, most of it downloads.
+
+Use either the download or your own build, not both: they share the app's identity, and the Accessibility permission belongs to one of them at a time.
 
 The steps are written so that an AI coding agent can run them in Terminal. Steps marked **👤** need the person at the Mac: a password, a dialog or a switch in System Settings. An agent should stop there, say exactly what to do, and wait.
 
 Run the steps in order. If Accessibility is granted before the certificate is trusted (step 3), macOS ties the permission to that one build, and the app keeps asking for it; see [Troubleshooting](#troubleshooting).
 
-### 1. Requirements
+#### 1. Requirements
 
 - macOS 26 or later, on Apple silicon. Intel Macs aren't supported: Phonon's Core ML model runs on the Neural Engine.
 - Swift 6 or later. Check with `swift --version`. If it's missing, run `xcode-select --install`. **👤** Confirm the installer dialog.
@@ -68,7 +79,7 @@ git clone https://github.com/vitalyliber/saytap.git
 cd saytap
 ```
 
-### 2. Create the signing certificate
+#### 2. Create the signing certificate
 
 Do this once per Mac. Skip it if this command already prints a certificate:
 
@@ -91,7 +102,7 @@ security import "$CERT_DIR/signing.p12" -k ~/Library/Keychains/login.keychain-db
 rm -rf "$CERT_DIR"
 ```
 
-### 3. Trust the certificate system-wide
+#### 3. Trust the certificate system-wide
 
 **👤** This needs your admin password. macOS checks app permissions as root, so trusting the certificate only in the login keychain is not enough. The trust covers code signing only.
 
@@ -107,7 +118,7 @@ Check it. The output should list "Saytap Signing" with Code Signing:
 security dump-trust-settings -d | grep -A3 "Saytap Signing"
 ```
 
-### 4. Build and install
+#### 4. Build and install
 
 ```bash
 ./build.sh
@@ -119,7 +130,7 @@ This builds the app with Swift Package Manager, installs `~/Applications/Saytap.
 
 On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done, and the pop-up says the voice is being prepared. Later launches load it in about half a second.
 
-### 5. Allow Accessibility
+#### 5. Allow Accessibility
 
 **👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. Click **Open System Settings** and switch **Saytap** on in Privacy & Security → Accessibility.
 
@@ -129,11 +140,11 @@ Then restart the app and check that it has the permission. The log must say `Acc
 pkill -x Saytap; open --stderr /tmp/saytap.log ~/Applications/Saytap.app; sleep 2; cat /tmp/saytap.log
 ```
 
-### 6. Pick the language
+#### 6. Pick the language
 
 **👤** Open the menu bar icon → **Translate to** and pick your language, unless the ticked one is already right. By default it's the first language other than English in System Settings → General → Language & Region. If its dictionary isn't downloaded, the app starts the download. If the language isn't downloaded for Apple's offline translation, macOS shows a dialog with a download button next to it; click it, then **Done**. Either can be done later: anything missing is listed under Translate to.
 
-### 7. Try it
+#### 7. Try it
 
 Select a word in any app, for example in Notes, and tap ⌥ twice. You should hear the word and see the pop-up.
 
@@ -174,13 +185,13 @@ Everything is in the menu bar icon:
 ## Uninstall
 
 ```bash
-pkill -x Saytap; rm -rf ~/Applications/Saytap.app
+pkill -x Saytap; rm -rf /Applications/Saytap.app ~/Applications/Saytap.app
 tccutil reset Accessibility local.vitaly.saytap
 defaults delete local.vitaly.saytap
 rm -rf ~/Library/Application\ Support/Saytap
 ```
 
-**👤** Then delete the **Saytap Signing** certificate in Keychain Access, from both the login and the System keychain.
+**👤** If you built Saytap yourself, then delete the **Saytap Signing** certificate in Keychain Access, from both the login and the System keychain.
 
 ## Development
 
