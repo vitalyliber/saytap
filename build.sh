@@ -4,7 +4,7 @@ set -euo pipefail
 cd "${0:A:h}"
 
 APP="$HOME/Applications/Saytap.app"
-CERTIFICATE="Word Popup Signing"
+CERTIFICATE="Saytap Signing"
 # The Phonon release whose Core ML model the app ships; Package.swift pins the same version of the package.
 PHONON_VERSION="0.6.0"
 MODEL_URL="https://github.com/gradium-ai/xn-ptts/releases/download/v$PHONON_VERSION/phonon-31m-en-coreml.zip"

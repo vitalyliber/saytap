@@ -4,7 +4,7 @@ A macOS menu bar app: select English text, tap ⌥ twice (or ⌃⌥T), hear it a
 
 ## Commands
 
-- `./build.sh` builds a release, bundles the Phonon model and the icon, installs `~/Applications/Saytap.app`, signs it with the "Word Popup Signing" certificate and restarts it.
+- `./build.sh` builds a release, bundles the Phonon model and the icon, installs `~/Applications/Saytap.app`, signs it with the "Saytap Signing" certificate and restarts it.
 - `swift test` runs the unit tests in `Tests/SaytapTests` (Swift Testing). They need no network and no system dictionary: Oxford entries and Google responses are saved in `Tests/SaytapTests/Fixtures`.
 - `swift build -c release --arch arm64` only compiles.
 

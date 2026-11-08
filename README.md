@@ -1,75 +1,110 @@
-# Saytap
+<p align="center">
+  <img src="docs/images/icon.png" width="128" height="128" alt="Saytap icon">
+</p>
 
-A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** (or press **⌃⌥T**): the app reads it aloud and shows its translation in a floating pop-up next to the cursor.
+<h1 align="center">Saytap</h1>
 
-The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
+<p align="center">
+  Select an English word anywhere on your Mac, tap <b>⌥ Option</b> twice,<br>
+  and hear it spoken while its translation pops up next to the cursor.
+</p>
 
-- Click anywhere on the pop-up to hear the word again.
-- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Long phrases and translations wrap, so they show in full. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Saytap/history.json` and never leaves the Mac.
-- Pick the voice speed in the menu bar icon → **Speed**: 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2, as on YouTube. The app remembers it.
-- The pop-up stays until you press Esc or click anywhere else.
-- Pick the language to translate into in the menu bar icon → **Translate to**. By default it's the first language other than English in System Settings → General → Language & Region. Languages whose dictionary isn't downloaded are marked; choosing one starts the download (about a minute) and offers macOS's dialog to download it for offline translation. Until they're there, the menu shows what's missing under Translate to.
-- Words and phrasal verbs come from the bilingual Oxford dictionary that ships with macOS: translations grouped by part of speech, with transcription. It works offline and answers instantly.
-- Phrases and sentences the dictionary doesn't have go to Google Translate's public endpoint, so that text is sent to Google. When Google fails, limits requests or doesn't answer within a second, the app translates on the Mac with Apple's Translation, if the language is downloaded for it.
-- Pick the voice in the menu bar icon → **Voice**: Harper, Hadley, Everly, Maeve, Edwin or Spencer.
-- Pick how the pop-up looks in the menu bar icon → **Style**: Playful (the default), Standard, Minimal or Formal. Choosing one shows the last looked-up word in it. The pop-up fades in and out without moving.
-- Turn on the menu bar icon → **Launch at Login** to start the app with the Mac.
-- Speech comes from [Phonon](https://gradium.ai/phonon), Gradium's open text-to-speech model, built into the app with its Swift package and Core ML model. It runs on the Mac's Neural Engine, so the text isn't sent anywhere, and a word starts playing in about 20 ms. Switching the voice adds about half a second to the next word. If speech fails, the app beeps and the pop-up says why.
-- Without the Accessibility permission, the shortcut shows a pop-up saying so, and the menu offers **Allow Accessibility…**.
+<p align="center">
+  <a href="https://vitalyliber.github.io/saytap/">Website</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#how-it-works">How it works</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/playful-word.png" width="420" alt="The Saytap pop-up for the word harbour: transcription, translation and dictionary meanings">
+</p>
+
+## Features
+
+- **Works in any app.** Select a word or a phrase and tap ⌥ twice, or press ⌃⌥T. The pop-up appears next to the cursor and stays until you press Esc or click elsewhere. Click it to hear the word again.
+- **A real voice on your Mac.** Speech comes from [Phonon](https://gradium.ai/phonon), an open text-to-speech model that runs on the Neural Engine. Nothing is sent to a server, and a word starts playing in about 20 ms. Pick from six voices and eight speeds, from 0.25× to 2×.
+- **Dictionary meanings, not just a translation.** Words and phrasal verbs come from the bilingual Oxford dictionary built into macOS, with transcription and meanings grouped by part of speech. It works offline.
+- **Phrases and sentences too.** Text the dictionary doesn't have is translated by Google Translate, with Apple's on-device Translation as a fallback.
+- **History.** Every look-up is saved on your Mac. Search it, listen to any word again, and delete what you've learnt.
+- **Four styles.** Playful, Standard, Minimal and Formal.
+
+<p align="center">
+  <img src="docs/images/minimal-word.png" width="270" alt="Minimal style">
+  <img src="docs/images/formal-word.png" width="270" alt="Formal style">
+  <img src="docs/images/playful-phrase.png" width="270" alt="A translated sentence in the Playful style">
+</p>
+
+## How it works
+
+Each look-up tries these sources in order and stops at the first that answers:
+
+1. **The Oxford bilingual dictionary** that ships with macOS: instant and offline. Choosing a language in **Translate to** downloads its dictionary in about a minute.
+2. **Your history:** a phrase translated before is reused rather than sent anywhere.
+3. **Google Translate's public endpoint**, for phrases the dictionary doesn't have. The text is sent to Google.
+4. **Apple's Translation framework**, offline, when Google fails or takes longer than a second. The menu offers to download the language for it.
+
+Speech never leaves the Mac. The history is stored in `~/Library/Application Support/Saytap/history.json`.
+
+The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any other key, click or modifier in between cancels it, so your ⌥ shortcuts keep working.
 
 ## Install
 
-No Apple Developer account is needed. The app is built on the Mac it runs on and signed with a self-signed certificate made in step 2.
+There's no ready-made download. Without a paid Apple Developer ID, macOS keeps the Accessibility permission only for an app signed with a certificate the Mac trusts. So you build Saytap on your own Mac and sign it with a certificate you create in step 2. It takes about ten minutes, most of it downloads.
 
-These steps are written so an AI coding agent can run them in Terminal. Steps marked **👤** need the person at the Mac: a password, a dialog or a switch in System Settings. An agent should stop there, tell the person exactly what to do, and wait for them to confirm.
+The steps are written so that an AI coding agent can run them in Terminal. Steps marked **👤** need the person at the Mac: a password, a dialog or a switch in System Settings. An agent should stop there, say exactly what to do, and wait.
 
-Run the steps in order. If the Accessibility permission is granted before the certificate is trusted (step 3), macOS pins it to that one build, and the app keeps asking for it. See Troubleshooting.
+Run the steps in order. If Accessibility is granted before the certificate is trusted (step 3), macOS ties the permission to that one build, and the app keeps asking for it; see [Troubleshooting](#troubleshooting).
 
 ### 1. Requirements
 
 - macOS 26 or later, on Apple silicon. Intel Macs aren't supported: Phonon's Core ML model runs on the Neural Engine.
-- Swift 6 or later, with its package manager. Check with `swift --version`. If it's missing, run `xcode-select --install`. **👤** The person confirms the installer dialog.
-- About 650 MB of disk space: the app with its model (170 MB), the model copy Core ML compiles on first launch (310 MB), and the build's downloads.
+- Swift 6 or later. Check with `swift --version`. If it's missing, run `xcode-select --install`. **👤** Confirm the installer dialog.
+- About 650 MB of disk space: the app with its model (170 MB), the copy Core ML compiles on first launch (310 MB), and the build's downloads.
 
-Run the remaining commands from this folder (the one with `build.sh`).
+Clone the repository and run the remaining commands from its folder:
+
+```bash
+git clone https://github.com/vitalyliber/saytap.git
+cd saytap
+```
 
 ### 2. Create the signing certificate
 
 Do this once per Mac. Skip it if this command already prints a certificate:
 
 ```bash
-security find-certificate -c "Word Popup Signing"
+security find-certificate -c "Saytap Signing"
 ```
 
 Create the certificate and import it into the login keychain. The temporary folder is removed afterwards, so the private key exists only in the keychain:
 
 ```bash
 CERT_DIR="$(mktemp -d)"
-/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Word Popup Signing" \
+/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Saytap Signing" \
   -addext "keyUsage=critical,digitalSignature" \
   -addext "extendedKeyUsage=critical,codeSigning" \
   -addext "basicConstraints=critical,CA:false" \
   -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem"
 /usr/bin/openssl pkcs12 -export -inkey "$CERT_DIR/key.pem" -in "$CERT_DIR/cert.pem" \
-  -name "Word Popup Signing" -out "$CERT_DIR/signing.p12" -passout pass:word-popup
-security import "$CERT_DIR/signing.p12" -k ~/Library/Keychains/login.keychain-db -P word-popup -T /usr/bin/codesign
+  -name "Saytap Signing" -out "$CERT_DIR/signing.p12" -passout pass:saytap
+security import "$CERT_DIR/signing.p12" -k ~/Library/Keychains/login.keychain-db -P saytap -T /usr/bin/codesign
 rm -rf "$CERT_DIR"
 ```
 
 ### 3. Trust the certificate system-wide
 
-**👤** This needs the person's admin password. macOS checks app permissions as root, so trusting the certificate only in the login keychain is not enough. The trust covers code signing only.
+**👤** This needs your admin password. macOS checks app permissions as root, so trusting the certificate only in the login keychain is not enough. The trust covers code signing only.
 
 ```bash
-security find-certificate -c "Word Popup Signing" -p > /tmp/word-popup-signing.pem
-sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/word-popup-signing.pem
-rm /tmp/word-popup-signing.pem
+security find-certificate -c "Saytap Signing" -p > /tmp/saytap-signing.pem
+sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/saytap-signing.pem
+rm /tmp/saytap-signing.pem
 ```
 
-Check it. The output should list "Word Popup Signing" with Code Signing:
+Check it. The output should list "Saytap Signing" with Code Signing:
 
 ```bash
-security dump-trust-settings -d | grep -A3 "Word Popup Signing"
+security dump-trust-settings -d | grep -A3 "Saytap Signing"
 ```
 
 ### 4. Build and install
@@ -80,13 +115,13 @@ security dump-trust-settings -d | grep -A3 "Word Popup Signing"
 
 This builds the app with Swift Package Manager, installs `~/Applications/Saytap.app` and starts it. A speech bubble icon appears in the menu bar. The first build also fetches Phonon's Swift package (about 50 MB) and its Core ML model (about 140 MB, kept in `build/` for later builds).
 
-On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done, and the pop-up says the voice is being prepared. Later launches load it in about half a second.
+**👤** On the first build macOS asks: *"codesign wants to sign using key 'Saytap Signing' in your keychain."* Enter your login password and click **Always Allow**. Until then the build waits.
 
-**👤** On the first build macOS asks: *"codesign wants to sign using key 'Word Popup Signing' in your keychain."* The person enters their login password and clicks **Always Allow**. Until then the build waits.
+On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done, and the pop-up says the voice is being prepared. Later launches load it in about half a second.
 
 ### 5. Allow Accessibility
 
-**👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. The person clicks **Open System Settings** and switches **Saytap** on in Privacy & Security → Accessibility.
+**👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. Click **Open System Settings** and switch **Saytap** on in Privacy & Security → Accessibility.
 
 Then restart the app and check that it has the permission. The log must say `Accessibility trusted: 1`:
 
@@ -96,13 +131,24 @@ pkill -x Saytap; open --stderr /tmp/saytap.log ~/Applications/Saytap.app; sleep 
 
 ### 6. Pick the language
 
-**👤** The person opens the menu bar icon → **Translate to** and picks their language, unless the ticked one is already right. If its dictionary isn't downloaded, the app starts the download. If the language isn't downloaded for Apple's offline translation, macOS shows a dialog with a download button next to it; the person clicks it, then **Done**. Either can be done later from the menu, where anything missing appears under Translate to.
+**👤** Open the menu bar icon → **Translate to** and pick your language, unless the ticked one is already right. By default it's the first language other than English in System Settings → General → Language & Region. If its dictionary isn't downloaded, the app starts the download. If the language isn't downloaded for Apple's offline translation, macOS shows a dialog with a download button next to it; click it, then **Done**. Either can be done later: anything missing is listed under Translate to.
 
 ### 7. Try it
 
 Select a word in any app, for example in Notes, and tap ⌥ twice. You should hear the word and see the pop-up.
 
-To start the app at login, turn on the menu bar icon → **Launch at Login**.
+## Using it
+
+Everything is in the menu bar icon:
+
+| Menu | What it does |
+|---|---|
+| **History…** | Every looked-up word with its translation, newest first, with how many times you looked it up. Click a word to hear it, search by word or translation, press ⌫ to delete. A phrase looked up again reuses its saved translation; delete it to translate it afresh. |
+| **Translate to** | The language of translations. Languages whose dictionary isn't downloaded are marked. |
+| **Voice** | Harper, Hadley, Everly, Maeve, Edwin or Spencer. |
+| **Speed** | 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2. |
+| **Style** | Playful (the default), Standard, Minimal or Formal. Choosing one shows the last word in it. |
+| **Launch at Login** | Starts Saytap with the Mac. |
 
 ## Troubleshooting
 
@@ -133,14 +179,26 @@ defaults delete local.vitaly.saytap
 rm -rf ~/Library/Application\ Support/Saytap
 ```
 
-**👤** Then delete the **Word Popup Signing** certificate in Keychain Access, from both the login and the System keychain.
+**👤** Then delete the **Saytap Signing** certificate in Keychain Access, from both the login and the System keychain.
 
 ## Development
 
 `./build.sh` rebuilds, reinstalls and restarts the app. The certificate keeps the Accessibility permission across rebuilds.
 
-`swift test` runs the unit tests: the dictionary and Google parsers, the order of translation sources, the history and the language menu. CLAUDE.md describes the code, its pitfalls and how to check changes in the running app.
+`swift test` runs the unit tests: the dictionary and Google parsers, the order of translation sources, the history and the language menu. They need no network. [CLAUDE.md](CLAUDE.md) describes the code, its pitfalls and how to check changes in the running app.
 
 Phonon's version is pinned twice: the Swift package in `Package.swift` and the Core ML model in `build.sh` (`PHONON_VERSION`, with the archive's SHA-256). Update them together.
 
 Settings are constants in `Sources/Settings.swift`: voices (`PHONON_VOICES`; the model's 37 voices are in `build/Models-*/voices`), hotkey, double-tap modifier and timing, speed presets and the pop-up's size. Rebuild after you change them.
+
+The website is `docs/index.html`, served by GitHub Pages from the `docs` folder.
+
+## Credits
+
+- [Phonon](https://github.com/gradium-ai/xn-ptts) by Gradium: the Swift package is MIT or Apache-2.0, the model and voices Apache-2.0. `build.sh` downloads the model from its release.
+- The Oxford bilingual dictionaries and Apple's Translation come with macOS.
+- Translations of phrases come from Google Translate.
+
+## License
+
+[MIT](LICENSE)
