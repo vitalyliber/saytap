@@ -28,7 +28,6 @@ final class Popup {
 
     private let panel: PopupPanel
     private let stack = NSStackView()
-    private var hideTimer: Timer?
     private var monitors: [Any] = []
     private var shown: (word: String, translation: Translation?, status: String?)?
     // Set while the pop-up fades out; a pop-up shown meanwhile comes back in.
@@ -99,11 +98,10 @@ final class Popup {
         } else {
             appear(in: frame)
         }
-        startHiding()
+        closeOnClickOrEscape()
     }
 
     func hide() {
-        hideTimer?.invalidate()
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
         guard isOpen, let layer = panel.contentView?.layer else { return }
@@ -150,13 +148,8 @@ final class Popup {
         CATransaction.commit()
     }
 
-    private func startHiding() {
-        hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: POPUP_LIFETIME, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            if self.panel.frame.contains(NSEvent.mouseLocation) { self.startHiding() } else { self.hide() }
-        }
-
+    // The pop-up stays until a click outside it or Esc; it never closes by itself.
+    private func closeOnClickOrEscape() {
         guard monitors.isEmpty else { return }
         if let clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             self?.hide()

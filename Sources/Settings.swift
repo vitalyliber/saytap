@@ -66,7 +66,6 @@ let DOUBLE_TAP_INTERVAL: TimeInterval = 0.4
 let MAX_SELECTION_LENGTH = 500
 let COPY_TIMEOUT: TimeInterval = 0.4
 let COPY_POLL_INTERVAL: TimeInterval = 0.02
-let POPUP_LIFETIME: TimeInterval = 10
 let POPUP_WIDTH: CGFloat = 340
 let POPUP_PADDING: CGFloat = 14
 // Longer selections are phrases, set in this size instead of the style's word size.
