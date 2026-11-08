@@ -4,10 +4,14 @@ This makes `Saytap.dmg`, an installer anyone can download and open: the app is s
 
 It has to be done by a member of the Apple Developer Program, on their Mac.
 
+The steps are written so that an AI coding agent can run them in Terminal. Steps marked **👤** need the person at the Mac: a password, a dialog, or keeping their hands off Finder. An agent should stop there, say exactly what to do, and wait.
+
+If the app is already built and signed, and only the installer needs remaking, see [Remaking only the installer](#remaking-only-the-installer).
+
 ## Requirements
 
 - A Mac with Apple silicon, macOS 26 or later and Swift 6. Check with `swift --version`; if it's missing, run `xcode-select --install`.
-- A **Developer ID Application** certificate in the login keychain. If there isn't one: Xcode → Settings → Accounts → Manage Certificates → **+** → Developer ID Application. An "Apple Development" certificate won't do: it only runs on your own devices.
+- A **Developer ID Application** certificate in the login keychain. If there isn't one, **👤** Xcode → Settings → Accounts → Manage Certificates → **+** → Developer ID Application. An "Apple Development" certificate won't do: it only runs on your own devices.
 
 ## 1. Get the code
 
@@ -26,7 +30,13 @@ The name is the part in quotes, for example `Developer ID Application: Jane Appl
 
 ## 3. Save the notarization credentials
 
-Do this once per Mac. Create an app-specific password at [account.apple.com](https://account.apple.com) → Sign-In and Security → App-Specific Passwords, then save it in the keychain under the profile name `saytap-notary`. The command asks for the password:
+Do this once per Mac. Skip it if this command runs without an error:
+
+```bash
+xcrun notarytool history --keychain-profile saytap-notary
+```
+
+**👤** Create an app-specific password at [account.apple.com](https://account.apple.com) → Sign-In and Security → App-Specific Passwords, then save it in the keychain under the profile name `saytap-notary`. The command asks for the password:
 
 ```bash
 xcrun notarytool store-credentials saytap-notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
@@ -52,8 +62,8 @@ codesign --verify --deep --strict --verbose=2 ~/Applications/Saytap.app
 DEVELOPER_ID="Developer ID Application: Jane Appleseed (ABCDE12345)" NOTARY_PROFILE=saytap-notary ./dmg.sh
 ```
 
-- The first time, macOS asks whether Terminal may control Finder: click **Allow**. `dmg.sh` lays out the installer window through Finder.
-- The script closes Finder's windows, then opens and closes the installer window. Leave Finder alone for about 15 seconds.
+- **👤** The first time, macOS asks whether Terminal may control Finder: click **Allow**. `dmg.sh` lays out the installer window through Finder.
+- **👤** The script closes Finder's windows, then opens and closes the installer window. Leave Finder alone for about 15 seconds.
 - If it stops with "Finder saved the window at … instead of 640x400", run it again.
 - Apple's notarization takes a few minutes. The script ends with "The staple and validate action worked!" and "Made build/Saytap.dmg".
 
@@ -74,6 +84,20 @@ gh release create v1.0 build/Saytap.dmg --title "Saytap 1.0" --notes "…"
 ```
 
 The latest release's file is always at `https://github.com/vitalyliber/saytap/releases/latest/download/Saytap.dmg`, as long as it's named `Saytap.dmg`.
+
+## Remaking only the installer
+
+When the app in `~/Applications/Saytap.app` is already signed and only `dmg.sh` or its window changed, the app doesn't need rebuilding.
+
+1. Update the code with `git pull` in the clone.
+2. Check that the installed app is signed with your Developer ID and the hardened runtime. The output must show your `Developer ID Application` certificate and `flags=0x10000(runtime)`; otherwise go back to step 4.
+
+   ```bash
+   codesign -dvv ~/Applications/Saytap.app 2>&1 | grep -E 'Authority=Developer ID Application|flags'
+   ```
+
+3. Check the notarization profile as in step 3.
+4. Run steps 5 and 6.
 
 ## When notarization fails
 
