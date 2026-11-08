@@ -16,7 +16,7 @@ struct PopupStyle {
     let speakerSymbol: String
     let phonetic: (prefix: String, suffix: String)
     let italicPartOfSpeech: Bool
-    // The pop-up fades in without moving; only its speaker icon animates.
+    // How long the pop-up takes to fade in; nothing in it moves.
     let fadeIn: TimeInterval
 }
 
