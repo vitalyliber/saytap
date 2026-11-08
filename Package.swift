@@ -16,5 +16,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedFramework("Cocoa"), .linkedFramework("Carbon")]
         ),
+        .testTarget(
+            name: "WordPopupTests",
+            dependencies: ["WordPopup"],
+            resources: [.copy("Fixtures")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
