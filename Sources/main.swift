@@ -20,6 +20,7 @@ let SPEED_SAMPLE = "This is how fast I speak."
 let VOICE_KEY = "voiceIdentifier"
 let AUTOMATIC_VOICE_TITLE = "Automatic (best installed)"
 let VOICE_SAMPLE = "Hello, this is how I sound."
+let VOICE_SETTINGS_URL = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent")!
 
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
@@ -518,6 +519,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for voice in Speaker.englishVoices() where voice.quality != .default {
             addVoiceOption(voiceTitle(voice), identifier: voice.identifier, to: menu)
         }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Download more voices…", action: #selector(openVoiceSettings), keyEquivalent: "").target = self
+    }
+
+    @objc private func openVoiceSettings() {
+        NSWorkspace.shared.open(VOICE_SETTINGS_URL)
     }
 
     private func addVoiceOption(_ title: String, identifier: String?, to menu: NSMenu) {
