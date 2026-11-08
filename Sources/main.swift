@@ -13,6 +13,8 @@ let DEFAULT_TARGET_LANGUAGE = "es"
 let GOOGLE_LANGUAGE_CODES = ["zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "zh-Hant-HK": "zh-TW", "yue-Hant": "yue"]
 let TRANSLATION_LANGUAGES_SETTINGS = "System Settings → General → Language & Region → Translation Languages"
 let HTTP_TOO_MANY_REQUESTS = 429
+// Google usually answers in 0.1–0.3 s; a stalled network hands the text to Apple Translation after this.
+let GOOGLE_TIMEOUT: TimeInterval = 1
 let INDEX_LANGUAGE_KEY = "DCSDictionaryIndexLanguage"
 let DESCRIPTION_LANGUAGE_KEY = "DCSDictionaryDescriptionLanguage"
 let ENTRY_XHTML_VERSION = 0
@@ -203,7 +205,8 @@ enum Translator {
             URLQueryItem(name: "q", value: text),
         ]
 
-        URLSession.shared.dataTask(with: components.url!) { data, response, error in
+        let request = URLRequest(url: components.url!, timeoutInterval: GOOGLE_TIMEOUT)
+        URLSession.shared.dataTask(with: request) { data, response, error in
             let result: Result<Translation, TranslationFailure>
             if (response as? HTTPURLResponse)?.statusCode == HTTP_TOO_MANY_REQUESTS {
                 result = .failure(TranslationFailure(message: "Google is limiting translations right now."))
