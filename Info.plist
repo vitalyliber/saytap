@@ -6,6 +6,8 @@
 	<string>Word Popup</string>
 	<key>CFBundleExecutable</key>
 	<string>WordPopup</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.vitaly.word-popup</string>
 	<key>CFBundleName</key>

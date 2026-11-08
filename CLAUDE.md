@@ -4,7 +4,7 @@ A macOS menu bar app: select English text, tap ⌥ twice (or ⌃⌥T), hear it a
 
 ## Commands
 
-- `./build.sh` builds a release, bundles the Phonon model, installs `~/Applications/Word Popup.app`, signs it with the "Word Popup Signing" certificate and restarts it.
+- `./build.sh` builds a release, bundles the Phonon model and the icon, installs `~/Applications/Word Popup.app`, signs it with the "Word Popup Signing" certificate and restarts it.
 - `swift test` runs the unit tests in `Tests/WordPopupTests` (Swift Testing). They need no network and no system dictionary: Oxford entries and Google responses are saved in `Tests/WordPopupTests/Fixtures`.
 - `swift build -c release --arch arm64` only compiles.
 
@@ -21,6 +21,7 @@ A macOS menu bar app: select English text, tap ⌥ twice (or ⌃⌥T), hear it a
 | `Popup.swift`, `PopupStyle.swift` | The pop-up and its styles (Playful, Standard, Minimal, Formal). |
 | `TranslationPackDownloader.swift` | Shows macOS's dialog that downloads a language for Apple Translation. |
 | `AppDelegate.swift` | The menu, settings and the look-up flow. |
+| `icon.swift` (next to `build.sh`, not in the package) | Draws the app icon; `build.sh` turns it into `build/AppIcon.icns` whenever the script changes. It fills Apple's icon grid, so macOS 26 shows it as is, not inside a grey squircle. |
 
 ## Gotchas
 

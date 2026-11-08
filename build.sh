@@ -32,6 +32,19 @@ if [[ ! -d "$MODELS" ]]; then
   rm -rf build/model build/model.zip
 fi
 
+ICON="build/AppIcon.icns"
+if [[ ! -f "$ICON" || icon.swift -nt "$ICON" ]]; then
+  rm -rf build/AppIcon.iconset
+  mkdir -p build/AppIcon.iconset
+  swift icon.swift build/icon.png
+  for size in 16 32 128 256 512; do
+    sips -z $size $size build/icon.png --out "build/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null
+    sips -z $((size * 2)) $((size * 2)) build/icon.png --out "build/AppIcon.iconset/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns build/AppIcon.iconset -o "$ICON"
+  rm -rf build/AppIcon.iconset build/icon.png
+fi
+
 swift build -c release --arch arm64
 BINARY="$(swift build -c release --arch arm64 --show-bin-path)/WordPopup"
 
@@ -41,6 +54,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp "$BINARY" "$APP/Contents/MacOS/WordPopup"
 cp -R "$MODELS" "$APP/Contents/Resources/Models"
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 # A real certificate keeps the Accessibility permission across rebuilds; an ad-hoc signature
 # is identified by its hash, so macOS would forget the permission every time.
 codesign --force --sign "$CERTIFICATE" "$APP"
