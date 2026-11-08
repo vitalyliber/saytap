@@ -3,6 +3,8 @@ import Carbon.HIToolbox
 import Cocoa
 import CoreServices
 import PhononTTS
+import ServiceManagement
+import SwiftUI
 import Translation
 
 // MARK: - Settings
@@ -13,6 +15,9 @@ let DEFAULT_TARGET_LANGUAGE = "es"
 // Google's codes where they differ from the dictionaries' language identifiers.
 let GOOGLE_LANGUAGE_CODES = ["zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "zh-Hant-HK": "zh-TW", "yue-Hant": "yue"]
 let TRANSLATION_LANGUAGES_SETTINGS = "System Settings → General → Language & Region → Translation Languages"
+// Searched for in a dictionary that isn't downloaded yet, which makes macOS download it.
+let DOWNLOAD_TRIGGER_WORD = "hello"
+let WARNING_SYMBOL = "exclamationmark.triangle"
 let HTTP_TOO_MANY_REQUESTS = 429
 // Google usually answers in 0.1–0.3 s; a stalled network hands the text to Apple Translation after this.
 let GOOGLE_TIMEOUT: TimeInterval = 1
@@ -50,6 +55,7 @@ let PHONON_VOICES = ["Harper", "Hadley", "Everly", "Maeve", "Edwin", "Spencer"]
 let MODELS_FOLDER = "Models"
 // One sample to schedule after an utterance: its playback marks the end of the speech.
 let END_MARKER_SAMPLES = 1
+let PREPARING_VOICE_NOTE = "Preparing the voice: the first launch takes a few seconds."
 
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
@@ -174,11 +180,13 @@ struct TranslationFailure: Error {
     let message: String
 }
 
-// Words come from the bilingual dictionary that ships with macOS. Phrases it doesn't have go to Google,
-// and to Apple's on-device translation when Google fails or limits requests.
+// Words come from the bilingual dictionary that ships with macOS. Phrases it doesn't have come from the history when
+// they were translated before, otherwise from Google, and from Apple's on-device translation when Google fails.
 enum Translator {
-    static func translate(_ text: String, to language: String, completion: @escaping (Result<Translation, TranslationFailure>) -> Void) {
-        if let entry = BilingualDictionary.lookUp(text, in: language) {
+    // A remembered translation saves a request, but comes after the dictionary, which may have been downloaded since.
+    static func translate(_ text: String, to language: String, remembered: Translation?,
+                          completion: @escaping (Result<Translation, TranslationFailure>) -> Void) {
+        if let entry = BilingualDictionary.lookUp(text, in: language) ?? remembered {
             completion(.success(entry))
             return
         }
@@ -259,25 +267,50 @@ private func DCSCopyRecordsForSearchString(_ dictionary: DCSDictionary, _ text: 
                                            _ method: UnsafeRawPointer?, _ maxResults: UnsafeRawPointer?) -> Unmanaged<CFArray>?
 @_silgen_name("DCSRecordCopyData") private func DCSRecordCopyData(_ record: CFTypeRef, _ version: Int) -> Unmanaged<CFString>?
 @_silgen_name("DCSRecordGetHeadword") private func DCSRecordGetHeadword(_ record: CFTypeRef) -> Unmanaged<CFString>?
+// nil until the dictionary is downloaded.
+@_silgen_name("DCSDictionaryGetURL") private func DCSDictionaryGetURL(_ dictionary: DCSDictionary) -> Unmanaged<CFURL>?
 
 // The bilingual dictionaries that come with macOS, read through private DictionaryServices calls: the public API
 // only searches the dictionaries ticked in Dictionary.app and returns an entry as one line of plain text.
 // Oxford entries mark parts of speech, translations and examples with classes, so they can be split up.
 enum BilingualDictionary {
-    // Target language → dictionary, for every dictionary that translates from English.
-    static let byLanguage: [String: DCSDictionary] = {
+    // Target language → dictionary, for every dictionary that translates from English. Read again by refresh(),
+    // since dictionaries are downloaded while the app runs.
+    private(set) static var byLanguage = available()
+
+    static func refresh() {
+        byLanguage = available()
+    }
+
+    static func isDownloaded(_ language: String) -> Bool {
+        byLanguage[language].map(isDownloaded) ?? false
+    }
+
+    // Takes about a minute; refresh() then finds it downloaded.
+    static func startDownload(_ language: String) {
+        guard let dictionary = byLanguage[language] else { return }
+        _ = DCSCopyRecordsForSearchString(dictionary, DOWNLOAD_TRIGGER_WORD as CFString, nil, nil)?.takeRetainedValue()
+    }
+
+    // A language with two dictionaries gets the downloaded one.
+    private static func available() -> [String: DCSDictionary] {
         var found: [String: DCSDictionary] = [:]
         let dictionaries = (DCSCopyAvailableDictionaries()?.takeRetainedValue() as? Set<AnyHashable>) ?? []
         for case let dictionary as DCSDictionary in dictionaries {
             let pairs = DCSDictionaryGetLanguages(dictionary)?.takeUnretainedValue() as? [[String: String]] ?? []
             for pair in pairs where pair[INDEX_LANGUAGE_KEY] == SOURCE_LANGUAGE {
-                if let language = pair[DESCRIPTION_LANGUAGE_KEY], language != SOURCE_LANGUAGE, found[language] == nil {
+                guard let language = pair[DESCRIPTION_LANGUAGE_KEY], language != SOURCE_LANGUAGE else { continue }
+                if found[language].map({ !isDownloaded($0) && isDownloaded(dictionary) }) ?? true {
                     found[language] = dictionary
                 }
             }
         }
         return found
-    }()
+    }
+
+    private static func isDownloaded(_ dictionary: DCSDictionary) -> Bool {
+        DCSDictionaryGetURL(dictionary) != nil
+    }
 
     // A dictionary that isn't downloaded yet returns no records, so the phrase translators take over.
     // A phrasal verb comes back as its verb's whole entry, so only its own section is read.
@@ -351,6 +384,8 @@ enum BilingualDictionary {
 struct HistoryEntry: Codable {
     var word: String
     var translation: Translation
+    // Missing in entries saved before translations were reused.
+    var language: String?
     var count: Int
     var lastLookedUp: Date
 
@@ -377,13 +412,17 @@ final class History {
         load()
     }
 
-    func record(_ word: String, translation: Translation) {
+    func record(_ word: String, translation: Translation, language: String) {
         var count = 1
         if let index = entries.firstIndex(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) {
             count += entries.remove(at: index).count
         }
-        entries.insert(HistoryEntry(word: word, translation: translation, count: count, lastLookedUp: Date()), at: 0)
+        entries.insert(HistoryEntry(word: word, translation: translation, language: language, count: count, lastLookedUp: Date()), at: 0)
         save()
+    }
+
+    func translation(of word: String, in language: String) -> Translation? {
+        entries.first { $0.word.caseInsensitiveCompare(word) == .orderedSame && $0.language == language }?.translation
     }
 
     func remove(_ words: Set<String>) {
@@ -565,6 +604,11 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 final class Speaker: @unchecked Sendable {
     var voice = PHONON_VOICES[0]
     var speed = SPEECH_SPEEDS[DEFAULT_SPEED_INDEX]
+    // Called with what the pop-up should say about speech: the first launch's preparation or an error; nil when it works.
+    var onNote: ((String?) -> Void)?
+    private var note: String? {
+        didSet { if note != oldValue { onNote?(note) } }
+    }
     private var phonon: Task<Phonon, Error>?
     private var generation: Task<Void, Never>?
     private let engine = AVAudioEngine()
@@ -586,15 +630,20 @@ final class Speaker: @unchecked Sendable {
     // Starts loading the model with the current voice, so the first word doesn't wait for it.
     func load() {
         let voice = voice
-        phonon = Task.detached {
+        let installed = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(SUPPORT_FOLDER).appendingPathComponent(MODELS_FOLDER)
+        if !PhononModels.isInstalled(at: installed) || Phonon.needsCompiling(installed) { note = PREPARING_VOICE_NOTE }
+        let phonon = Task.detached {
             guard let bundled = Bundle.main.url(forResource: MODELS_FOLDER, withExtension: nil) else {
-                throw PhononError(description: "The app has no \(MODELS_FOLDER) folder: build it with build.sh.")
+                throw PhononError(description: "the app has no \(MODELS_FOLDER) folder; build it with build.sh")
             }
-            let installed = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent(SUPPORT_FOLDER).appendingPathComponent(MODELS_FOLDER)
             let phonon = try await Phonon.load(models: PhononModels.install(bundled: bundled, to: installed), language: .english)
             try await phonon.setVoice(voice)
             return phonon
+        }
+        self.phonon = phonon
+        Task { @MainActor [weak self] in
+            if case .failure(let error) = await phonon.result { self?.fail(error) } else { self?.note = nil }
         }
     }
 
@@ -620,8 +669,7 @@ final class Speaker: @unchecked Sendable {
                 }
                 DispatchQueue.main.async { self?.finish(key: key, for: current) }
             } catch {
-                NSLog("Phonon failed: %@", String(describing: error))
-                DispatchQueue.main.async { if self?.request == current { NSSound.beep() } }
+                DispatchQueue.main.async { if self?.request == current { self?.fail(error) } }
             }
         }
     }
@@ -633,6 +681,12 @@ final class Speaker: @unchecked Sendable {
         generation = nil
         samples = []
         node.stop()
+    }
+
+    private func fail(_ error: Error) {
+        NSLog("Phonon failed: %@", String(describing: error))
+        note = "Can't speak: \(error)"
+        NSSound.beep()
     }
 
     private func enqueue(_ chunk: [Float], for current: Int) {
@@ -648,6 +702,7 @@ final class Speaker: @unchecked Sendable {
     private func finish(key: String, for current: Int) {
         guard request == current, let marker = buffer([Float](repeating: 0, count: END_MARKER_SAMPLES)) else { return }
         cached = (key, samples)
+        note = nil
         node.scheduleBuffer(marker, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async { if self?.request == current { self?.engine.pause() } }
         }
@@ -670,11 +725,16 @@ final class PopupPanel: NSPanel {
 
 final class Popup {
     var onReplay: (() -> Void)?
+    // A line about speech under every pop-up while it's set; the open pop-up updates when it changes.
+    var speechNote: String? {
+        didSet { if panel.isVisible, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) } }
+    }
 
     private let panel: PopupPanel
     private let stack = NSStackView()
     private var hideTimer: Timer?
     private var monitors: [Any] = []
+    private var shown: (word: String, translation: Translation?, status: String?)?
 
     init() {
         panel = PopupPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -708,18 +768,20 @@ final class Popup {
         panel.contentView = background
     }
 
+    // An empty word shows only the status, for messages that aren't about a word.
     func show(word: String, translation: Translation?, status: String? = nil, at point: NSPoint? = nil) {
+        shown = (word, translation, status)
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-        stack.addArrangedSubview(header(word: word, phonetic: translation?.phonetic))
+        if !word.isEmpty { stack.addArrangedSubview(header(word: word, phonetic: translation?.phonetic)) }
         if let translation {
             stack.addArrangedSubview(label(translation.text, size: 16, weight: .medium))
             for entry in translation.dictionary {
                 stack.addArrangedSubview(dictionaryLine(entry.partOfSpeech, entry.terms))
             }
         }
-        if let status {
-            stack.addArrangedSubview(label(status, size: 13, color: .secondaryLabelColor))
+        for line in [status, word.isEmpty ? nil : speechNote].compactMap({ $0 }) {
+            stack.addArrangedSubview(label(line, size: 13, color: .secondaryLabelColor))
         }
 
         panel.contentView?.layoutSubtreeIfNeeded()
@@ -877,9 +939,48 @@ final class DoubleTap {
     }
 }
 
+// MARK: - Offline translation
+
+// Shows macOS's own dialog that downloads a language for Apple's on-device translation. The dialog belongs to a window,
+// so a tiny invisible one hosts the SwiftUI view that asks for it.
+final class TranslationPackDownloader {
+    private var window: NSWindow?
+
+    func download(_ language: String, completion: @escaping () -> Void) {
+        window?.close()
+        let configuration = TranslationSession.Configuration(source: Locale.Language(identifier: SOURCE_LANGUAGE),
+                                                             target: Locale.Language(identifier: language))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.contentView = NSHostingView(rootView: TranslationPackRequest(configuration: configuration) { [weak self, weak window] in
+            window?.close()
+            if self?.window === window { self?.window = nil }
+            completion()
+        })
+        window.center()
+        NSApp.activate()
+        window.orderFrontRegardless()
+        self.window = window
+    }
+}
+
+private struct TranslationPackRequest: View {
+    let configuration: TranslationSession.Configuration
+    let onFinish: () -> Void
+
+    var body: some View {
+        Color.clear.frame(width: 1, height: 1).translationTask(configuration) { session in
+            // Throws when the person cancels the dialog; the status check afterwards tells either way.
+            try? await session.prepareTranslation()
+            await MainActor.run { onFinish() }
+        }
+    }
+}
+
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let speaker = Speaker()
     private let popup = Popup()
     private let history = History()
@@ -893,6 +994,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var doubleTap: DoubleTap?
     private var currentWord = ""
     private var targetLanguage = ""
+    private let packDownloader = TranslationPackDownloader()
+    private var packStatus: LanguageAvailability.Status?
+    private let statusMenu = NSMenu()
+    private let languageMenu = NSMenu()
+    private let dictionaryItem = NSMenuItem(title: "", action: #selector(downloadDictionary), keyEquivalent: "")
+    private let packItem = NSMenuItem(title: "", action: #selector(downloadTranslationPack), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private let accessibilityItem = NSMenuItem(title: "", action: #selector(openAccessibilitySettings), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         popup.onReplay = { [weak self] in self.map { $0.speaker.speak($0.currentWord) } }
@@ -901,9 +1010,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let savedSpeed = UserDefaults.standard.string(forKey: SPEED_KEY)
         if let speed = SPEECH_SPEEDS.first(where: { $0.title == savedSpeed }) { speaker.speed = speed }
         if let voice = UserDefaults.standard.string(forKey: VOICE_KEY), PHONON_VOICES.contains(voice) { speaker.voice = voice }
+        speaker.onNote = { [weak self] note in self?.popup.speechNote = note }
         speaker.load()
         targetLanguage = UserDefaults.standard.string(forKey: TARGET_LANGUAGE_KEY) ?? AppDelegate.preferredTargetLanguage()
         setUpMenu()
+        refreshPackStatus()
         setUpShortcuts()
 
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -918,7 +1029,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SelectionReader.read { [weak self] text in
             guard let self else { return }
             let word = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if word.isEmpty {
+            if word.isEmpty && !AXIsProcessTrusted() {
+                self.popup.show(word: "", translation: nil,
+                                status: "Word Popup can't read the selection without the Accessibility permission. Open the menu bar icon → Allow Accessibility…",
+                                at: NSEvent.mouseLocation)
+            } else if word.isEmpty {
                 NSSound.beep()
             } else {
                 self.lookUp(String(word.prefix(MAX_SELECTION_LENGTH)))
@@ -931,11 +1046,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speaker.speak(word)
         popup.show(word: word, translation: nil, status: "Translating…", at: NSEvent.mouseLocation)
 
-        Translator.translate(word, to: targetLanguage) { [weak self] result in
+        let language = targetLanguage
+        Translator.translate(word, to: language, remembered: history.translation(of: word, in: language)) { [weak self] result in
             guard let self, self.currentWord == word else { return }
             switch result {
             case .success(let translation):
-                self.history.record(word, translation: translation)
+                self.history.record(word, translation: translation, language: language)
                 self.popup.show(word: word, translation: translation, status: nil)
             case .failure(let failure):
                 self.popup.show(word: word, translation: nil, status: failure.message)
@@ -965,28 +1081,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             && Locale.Language(identifier: left.maximalIdentifier).script == Locale.Language(identifier: right.maximalIdentifier).script
     }
 
+    // Filled on every open by menuNeedsUpdate, so a dictionary downloaded meanwhile loses its mark.
     private func targetLanguageMenuItem() -> NSMenuItem {
-        let submenu = NSMenu()
-        let languages = AppDelegate.targetLanguages()
-        for group in [languages.preferred, languages.others] where !group.isEmpty {
-            if submenu.numberOfItems > 0 { submenu.addItem(.separator()) }
-            for language in group {
-                let option = submenu.addItem(withTitle: Translator.languageName(language), action: #selector(changeTargetLanguage), keyEquivalent: "")
-                option.target = self
-                option.representedObject = language
-                option.state = language == targetLanguage ? .on : .off
-            }
-        }
+        languageMenu.delegate = self
         let item = NSMenuItem(title: "Translate to", action: nil, keyEquivalent: "")
-        item.submenu = submenu
+        item.submenu = languageMenu
         return item
     }
 
+    private func fillLanguageMenu() {
+        languageMenu.removeAllItems()
+        let languages = AppDelegate.targetLanguages()
+        for group in [languages.preferred, languages.others] where !group.isEmpty {
+            if languageMenu.numberOfItems > 0 { languageMenu.addItem(.separator()) }
+            for language in group {
+                let name = Translator.languageName(language)
+                let option = languageMenu.addItem(withTitle: name, action: #selector(changeTargetLanguage), keyEquivalent: "")
+                option.target = self
+                option.representedObject = language
+                option.state = language == targetLanguage ? .on : .off
+                if !BilingualDictionary.isDownloaded(language) {
+                    let title = NSMutableAttributedString(string: name, attributes: [.font: NSFont.menuFont(ofSize: 0)])
+                    title.append(NSAttributedString(string: "  dictionary not downloaded", attributes: [
+                        .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                    ]))
+                    option.attributedTitle = title
+                }
+            }
+        }
+    }
+
+    // Starts downloading the language's dictionary, and offers its offline translation, when they're missing.
     @objc private func changeTargetLanguage(_ sender: NSMenuItem) {
         guard let language = sender.representedObject as? String else { return }
         targetLanguage = language
         UserDefaults.standard.set(language, forKey: TARGET_LANGUAGE_KEY)
-        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
+        packStatus = nil
+        if !BilingualDictionary.isDownloaded(language) { BilingualDictionary.startDownload(language) }
+        updateLanguageItems()
+        refreshPackStatus { [weak self] status in
+            if status == .supported { self?.downloadTranslationPack() }
+        }
+    }
+
+    // The menu items that offer what the current language is missing.
+    private func updateLanguageItems() {
+        let name = Translator.languageName(targetLanguage)
+        dictionaryItem.title = "Downloading the \(name) dictionary…"
+        dictionaryItem.isHidden = BilingualDictionary.byLanguage[targetLanguage] == nil || BilingualDictionary.isDownloaded(targetLanguage)
+        packItem.title = "Download \(name) for offline translation…"
+        packItem.isHidden = packStatus != .supported
+    }
+
+    private func refreshPackStatus(completion: ((LanguageAvailability.Status) -> Void)? = nil) {
+        let language = targetLanguage
+        Task { @MainActor [weak self] in
+            let status = await LanguageAvailability().status(from: Locale.Language(identifier: SOURCE_LANGUAGE),
+                                                             to: Locale.Language(identifier: language))
+            guard let self, self.targetLanguage == language else { return }
+            self.packStatus = status
+            self.updateLanguageItems()
+            completion?(status)
+        }
+    }
+
+    // Starts the download again, for when the first attempt had no connection.
+    @objc private func downloadDictionary() {
+        BilingualDictionary.startDownload(targetLanguage)
+    }
+
+    @objc private func downloadTranslationPack() {
+        packDownloader.download(targetLanguage) { [weak self] in self?.refreshPackStatus() }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled { try service.unregister() } else { try service.register() }
+        } catch {
+            NSLog("Launch at login failed: %@", String(describing: error))
+        }
+        // macOS may ask the person to allow it in Login Items first.
+        if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === languageMenu {
+            BilingualDictionary.refresh()
+            fillLanguageMenu()
+            return
+        }
+        BilingualDictionary.refresh()
+        updateLanguageItems()
+        refreshPackStatus()
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        let trusted = AXIsProcessTrusted()
+        accessibilityItem.title = trusted ? "Accessibility permission…" : "Allow Accessibility…"
+        accessibilityItem.image = trusted ? nil : NSImage(systemSymbolName: WARNING_SYMBOL, accessibilityDescription: "Missing")
     }
 
     @objc private func showHistory() {
@@ -1018,13 +1210,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Word Popup")
 
-        let menu = NSMenu()
+        let menu = statusMenu
+        menu.delegate = self
+        for missing in [dictionaryItem, packItem] {
+            missing.image = NSImage(systemSymbolName: WARNING_SYMBOL, accessibilityDescription: "Missing")
+            missing.indentationLevel = 1
+        }
         menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
         menu.addItem(withTitle: "History…", action: #selector(showHistory), keyEquivalent: "")
         menu.addItem(targetLanguageMenuItem())
+        menu.addItem(dictionaryItem)
+        menu.addItem(packItem)
         menu.addItem(speedMenuItem())
         menu.addItem(voiceMenuItem())
-        menu.addItem(withTitle: "Accessibility permission…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
+        menu.addItem(loginItem)
+        menu.addItem(accessibilityItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Word Popup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }

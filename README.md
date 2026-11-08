@@ -5,14 +5,16 @@ A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** 
 The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
 
 - Click 🔊 in the pop-up to hear the word again.
-- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
+- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
 - Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
-- Pick the language to translate into in the menu bar icon → **Translate to**. By default it's the first language other than English in System Settings → General → Language & Region.
-- Words and phrasal verbs come from the bilingual Oxford dictionary that ships with macOS: translations grouped by part of speech, with transcription. It works offline and answers instantly. If the dictionary for your language isn't downloaded yet, open Dictionary.app → Settings and tick it.
-- Phrases and sentences the dictionary doesn't have go to Google Translate's public endpoint, so that text is sent to Google. When Google fails, limits requests or doesn't answer within a second, the app translates on the Mac with Apple's Translation, if the language is downloaded in System Settings → General → Language & Region → Translation Languages.
+- Pick the language to translate into in the menu bar icon → **Translate to**. By default it's the first language other than English in System Settings → General → Language & Region. Languages whose dictionary isn't downloaded are marked; choosing one starts the download (about a minute) and offers macOS's dialog to download it for offline translation. Until they're there, the menu shows what's missing under Translate to.
+- Words and phrasal verbs come from the bilingual Oxford dictionary that ships with macOS: translations grouped by part of speech, with transcription. It works offline and answers instantly.
+- Phrases and sentences the dictionary doesn't have go to Google Translate's public endpoint, so that text is sent to Google. When Google fails, limits requests or doesn't answer within a second, the app translates on the Mac with Apple's Translation, if the language is downloaded for it.
 - Pick the voice in the menu bar icon → **Voice**: Harper, Hadley, Everly, Maeve, Edwin or Spencer.
-- Speech comes from [Phonon](https://gradium.ai/phonon), Gradium's open text-to-speech model, built into the app with its Swift package and Core ML model. It runs on the Mac's Neural Engine, so the text isn't sent anywhere, and a word starts playing in about 20 ms. Switching the voice adds about half a second to the next word. If speech fails, the app beeps.
+- Turn on the menu bar icon → **Launch at Login** to start the app with the Mac.
+- Speech comes from [Phonon](https://gradium.ai/phonon), Gradium's open text-to-speech model, built into the app with its Swift package and Core ML model. It runs on the Mac's Neural Engine, so the text isn't sent anywhere, and a word starts playing in about 20 ms. Switching the voice adds about half a second to the next word. If speech fails, the app beeps and the pop-up says why.
+- Without the Accessibility permission, the shortcut shows a pop-up saying so, and the menu offers **Allow Accessibility…**.
 
 ## Install
 
@@ -77,7 +79,7 @@ security dump-trust-settings -d | grep -A3 "Word Popup Signing"
 
 This builds the app with Swift Package Manager, installs `~/Applications/Word Popup.app` and starts it. A speech bubble icon appears in the menu bar. The first build also fetches Phonon's Swift package (about 50 MB) and its Core ML model (about 140 MB, kept in `build/` for later builds).
 
-On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done. Later launches load it in about half a second.
+On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done, and the pop-up says the voice is being prepared. Later launches load it in about half a second.
 
 **👤** On the first build macOS asks: *"codesign wants to sign using key 'Word Popup Signing' in your keychain."* The person enters their login password and clicks **Always Allow**. Until then the build waits.
 
@@ -91,17 +93,15 @@ Then restart the app and check that it has the permission. The log must say `Acc
 pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 2; cat /tmp/word-popup.log
 ```
 
-### 6. Optional: offline translation
+### 6. Pick the language
 
-**👤** For the best word translations, open Dictionary.app → Settings and tick the dictionary between English and the person's language, for example "Oxford Russian Dictionary". macOS downloads it.
-
-**👤** To translate phrases when Google Translate is unavailable, add the language in System Settings → General → Language & Region → Translation Languages.
+**👤** The person opens the menu bar icon → **Translate to** and picks their language, unless the ticked one is already right. If its dictionary isn't downloaded, the app starts the download. If the language isn't downloaded for Apple's offline translation, macOS shows a dialog with a download button next to it; the person clicks it, then **Done**. Either can be done later from the menu, where anything missing appears under Translate to.
 
 ### 7. Try it
 
 Select a word in any app, for example in Notes, and tap ⌥ twice. You should hear the word and see the pop-up.
 
-To start the app at login, add `~/Applications/Word Popup.app` in System Settings → General → Login Items.
+To start the app at login, turn on the menu bar icon → **Launch at Login**.
 
 ## Troubleshooting
 
@@ -115,7 +115,7 @@ To start the app at login, add `~/Applications/Word Popup.app` in System Setting
 
 - **`./build.sh` stops at `codesign` and waits.** The keychain dialog from step 4 is open, possibly behind other windows.
 - **A double tap of ⌥ only beeps, with no pop-up.** The app found no selected text. Some apps don't expose the selection; the app then copies it with ⌘C, which only works if the app supports copying.
-- **The pop-up appears, but there's a beep instead of the word.** Phonon failed to load or speak. Start the app with its log, look up a word, and read the line starting with `Phonon failed`:
+- **The pop-up appears, but there's a beep instead of the word.** Phonon failed to load or speak, and the pop-up's last line says why. For the full error, start the app with its log, look up a word, and read the line starting with `Phonon failed`:
 
   ```bash
   pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 10; cat /tmp/word-popup.log
