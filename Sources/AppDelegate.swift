@@ -35,7 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let savedStyle = UserDefaults.standard.string(forKey: POPUP_STYLE_KEY)
         if let style = POPUP_STYLES.first(where: { $0.title == savedStyle }) { popup.style = style }
         speaker.onNote = { [weak self] note in self?.popup.speechNote = note }
-        speaker.onPlaying = { [weak self] playing in self?.popup.speaking = playing }
         speaker.load()
         targetLanguage = UserDefaults.standard.string(forKey: TARGET_LANGUAGE_KEY) ?? AppDelegate.preferredTargetLanguage()
         setUpMenu()

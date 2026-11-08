@@ -38,7 +38,7 @@ let POPUP_STYLES = [
                fadeIn: POPUP_QUICK_FADE),
     PopupStyle(title: "Minimal", material: nil, background: [.windowBackgroundColor], border: .separatorColor,
                cornerRadius: 8, design: .default, wordSize: 17, text: .labelColor, secondary: .secondaryLabelColor,
-               accent: .secondaryLabelColor, speakerSymbol: "speaker.wave.1.fill", phonetic: ("", ""), italicPartOfSpeech: false,
+               accent: .secondaryLabelColor, speakerSymbol: "speaker.fill", phonetic: ("", ""), italicPartOfSpeech: false,
                fadeIn: POPUP_QUICK_FADE),
     PopupStyle(title: "Formal", material: nil, background: [NSColor(rgb: 0xFBF7EE), NSColor(rgb: 0xF3ECDC)], border: NSColor(rgb: 0xC9BC9C),
                cornerRadius: 3, design: .serif, wordSize: 20, text: NSColor(rgb: 0x2B2620), secondary: NSColor(rgb: 0x7D705B),

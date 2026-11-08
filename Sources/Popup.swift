@@ -4,29 +4,11 @@ final class PopupPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
-// The replay control: an image view, because symbol effects (the speaking waves) only run in one.
-final class SpeakerIcon: NSImageView {
-    var onClick: (() -> Void)?
-
-    override func mouseDown(with event: NSEvent) { onClick?() }
-
-    override func accessibilityRole() -> NSAccessibility.Role? { .button }
-
-    override func accessibilityPerformPress() -> Bool {
-        onClick?()
-        return true
-    }
-}
-
 final class Popup {
     var onReplay: (() -> Void)?
     // A line about speech under every pop-up while it's set; the open pop-up updates when it changes.
     var speechNote: String? {
         didSet { if isOpen, let shown { show(word: shown.word, translation: shown.translation, status: shown.status) } }
-    }
-    // The speaker icon's waves move while this is set.
-    var speaking = false {
-        didSet { if speaking != oldValue { animateSpeaker() } }
     }
 
     var style = POPUP_STYLES.first { $0.title == DEFAULT_POPUP_STYLE }! {
@@ -38,7 +20,6 @@ final class Popup {
     private var hideTimer: Timer?
     private var monitors: [Any] = []
     private var shown: (word: String, translation: Translation?, status: String?)?
-    private weak var speakerIcon: SpeakerIcon?
     // Set while the pop-up fades out; a pop-up shown meanwhile comes back in.
     private var closing = false
     private var isOpen: Bool { panel.isVisible && !closing }
@@ -155,15 +136,6 @@ final class Popup {
         CATransaction.commit()
     }
 
-    private func animateSpeaker() {
-        guard let speakerIcon else { return }
-        if speaking && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            speakerIcon.addSymbolEffect(.variableColor.iterative, options: .repeating)
-        } else {
-            speakerIcon.removeAllSymbolEffects()
-        }
-    }
-
     private func startHiding() {
         hideTimer?.invalidate()
         hideTimer = Timer.scheduledTimer(withTimeInterval: POPUP_LIFETIME, repeats: false) { [weak self] _ in
@@ -192,12 +164,10 @@ final class Popup {
     }
 
     private func header(word: String, phonetic: String?) -> NSView {
-        let replay = SpeakerIcon(image: NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: "Say again")!)
-        replay.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+        let replay = NSButton(image: NSImage(systemSymbolName: style.speakerSymbol, accessibilityDescription: "Say again")!,
+                              target: self, action: #selector(replay))
+        replay.isBordered = false
         replay.contentTintColor = style.accent
-        replay.onClick = { [weak self] in self?.onReplay?() }
-        speakerIcon = replay
-        animateSpeaker()
 
         // A phrase wraps in full, in a smaller size than a word so a few lines don't fill the screen.
         let size = word.count > POPUP_PHRASE_LENGTH ? POPUP_PHRASE_SIZE : style.wordSize
@@ -246,4 +216,5 @@ final class Popup {
         return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size, weight: weight)
     }
 
+    @objc private func replay() { onReplay?() }
 }
