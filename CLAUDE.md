@@ -7,7 +7,7 @@ A macOS menu bar app: select English text, tap ⌥ twice (or ⌃⌥T), hear it a
 - `./build.sh` builds a release, bundles the Phonon model and the icon, installs `~/Applications/Saytap.app`, signs it with the "Saytap Signing" certificate and restarts it.
 - `swift test` runs the unit tests in `Tests/SaytapTests` (Swift Testing). They need no network and no system dictionary: Oxford entries and Google responses are saved in `Tests/SaytapTests/Fixtures`.
 - `swift build -c release --arch arm64` only compiles.
-- `./dmg.sh [app]` packs an app into `build/Saytap.dmg` with a drag-to-Applications window; `DEVELOPER_ID` and `NOTARY_PROFILE` sign and notarize it.
+- `./dmg.sh [app]` packs an app into `build/Saytap.dmg` with a drag-to-Applications window; `DEVELOPER_ID` and `NOTARY_PROFILE` sign and notarize it. `DEVELOPER_ID` also makes `build.sh` sign with that certificate and the hardened runtime. RELEASING.md is the release guide.
 
 ## Where things are
 

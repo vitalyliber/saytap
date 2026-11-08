@@ -16,7 +16,9 @@ if [[ "$(uname -m)" != "arm64" ]]; then
   exit 1
 fi
 
-if ! security find-certificate -c "$CERTIFICATE" >/dev/null 2>&1; then
+# DEVELOPER_ID="Developer ID Application: …" signs a build to hand out instead, with the hardened runtime
+# notarization needs; dmg.sh then packs and notarizes it.
+if [[ -z "${DEVELOPER_ID:-}" ]] && ! security find-certificate -c "$CERTIFICATE" >/dev/null 2>&1; then
   echo "No \"$CERTIFICATE\" certificate in the keychain. Create it first: see Install in README.md." >&2
   exit 1
 fi
@@ -57,7 +59,11 @@ cp -R "$MODELS" "$APP/Contents/Resources/Models"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 # A real certificate keeps the Accessibility permission across rebuilds; an ad-hoc signature
 # is identified by its hash, so macOS would forget the permission every time.
-codesign --force --sign "$CERTIFICATE" "$APP"
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
+else
+  codesign --force --sign "$CERTIFICATE" "$APP"
+fi
 
 open "$APP"
 echo "Installed $APP"
