@@ -53,6 +53,20 @@ let POPUP_CURSOR_OFFSET: CGFloat = 16
 let MAX_DICTIONARY_TERMS = 6
 let ESCAPE_KEY_CODE = UInt16(kVK_Escape)
 
+let HISTORY_FOLDER = "Word Popup"
+let HISTORY_FILE = "history.json"
+let HISTORY_WINDOW_SIZE = NSSize(width: 720, height: 560)
+let HISTORY_ROW_HEIGHT: CGFloat = 40
+let HISTORY_SPACING: CGFloat = 8
+let HISTORY_CELL_INSET: CGFloat = 4
+let HISTORY_COLUMNS: [(id: String, title: String, width: CGFloat)] = [
+    ("word", "Word", 170),
+    ("translation", "Translation", 330),
+    ("count", "Times", 50),
+    ("date", "Last looked up", 140),
+]
+let DELETE_KEY_CODES: Set<UInt16> = [UInt16(kVK_Delete), UInt16(kVK_ForwardDelete)]
+
 // MARK: - Selected text
 
 enum SelectionReader {
@@ -125,10 +139,15 @@ enum SelectionReader {
 
 // MARK: - Translation
 
-struct Translation {
+struct DictionaryEntry: Codable {
+    var partOfSpeech: String
+    var terms: [String]
+}
+
+struct Translation: Codable {
     var text: String
     var phonetic: String?
-    var dictionary: [(partOfSpeech: String, terms: [String])]
+    var dictionary: [DictionaryEntry]
 }
 
 enum Translator {
@@ -163,12 +182,222 @@ enum Translator {
         let text = sentences.compactMap { $0.first as? String }.joined()
         let phonetic = sentences.last.flatMap { $0.count > 3 ? $0[3] as? String : nil }
         let entries = (root.count > 1 ? root[1] as? [[Any]] : nil) ?? []
-        let dictionary = entries.compactMap { entry -> (String, [String])? in
+        let dictionary = entries.compactMap { entry -> DictionaryEntry? in
             guard let partOfSpeech = entry.first as? String,
                   let terms = entry.count > 1 ? entry[1] as? [String] : nil else { return nil }
-            return (partOfSpeech, Array(terms.prefix(MAX_DICTIONARY_TERMS)))
+            return DictionaryEntry(partOfSpeech: partOfSpeech, terms: Array(terms.prefix(MAX_DICTIONARY_TERMS)))
         }
         return Translation(text: text, phonetic: phonetic, dictionary: dictionary)
+    }
+}
+
+// MARK: - History
+
+struct HistoryEntry: Codable {
+    var word: String
+    var translation: Translation
+    var count: Int
+    var lastLookedUp: Date
+
+    func matches(_ query: String) -> Bool {
+        ([word, translation.text] + translation.dictionary.flatMap(\.terms)).contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+}
+
+// Every looked-up word with its translation, newest first. A word looked up again moves to the top.
+final class History {
+    private(set) var entries: [HistoryEntry] = []
+    var onChange: (() -> Void)?
+    private let file: URL
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    init() {
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(HISTORY_FOLDER)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        file = folder.appendingPathComponent(HISTORY_FILE)
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+        load()
+    }
+
+    func record(_ word: String, translation: Translation) {
+        var count = 1
+        if let index = entries.firstIndex(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) {
+            count += entries.remove(at: index).count
+        }
+        entries.insert(HistoryEntry(word: word, translation: translation, count: count, lastLookedUp: Date()), at: 0)
+        save()
+    }
+
+    func remove(_ words: Set<String>) {
+        entries.removeAll { words.contains($0.word) }
+        save()
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: file) else { return }
+        do {
+            entries = try decoder.decode([HistoryEntry].self, from: data)
+        } catch {
+            // Keep an unreadable file aside rather than overwrite it on the next save.
+            try? FileManager.default.moveItem(at: file, to: file.appendingPathExtension("unreadable"))
+        }
+    }
+
+    private func save() {
+        try? encoder.encode(entries).write(to: file, options: .atomic)
+        onChange?()
+    }
+}
+
+final class HistoryTable: NSTableView {
+    var onDelete: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if DELETE_KEY_CODES.contains(event.keyCode) { onDelete?() } else { super.keyDown(with: event) }
+    }
+}
+
+// A list of the history with a search field. Clicking a row speaks the word; ⌫ deletes the selected rows.
+final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    var onSpeak: ((String) -> Void)?
+
+    private let history: History
+    private let window: NSWindow
+    private let search = NSSearchField()
+    private let table = HistoryTable()
+    private let dateFormatter = DateFormatter()
+    private var shown: [HistoryEntry] = []
+
+    init(history: History) {
+        self.history = history
+        window = NSWindow(contentRect: NSRect(origin: .zero, size: HISTORY_WINDOW_SIZE),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
+        super.init()
+        window.title = "Word History"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.setFrameAutosaveName("History")
+
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        dateFormatter.doesRelativeDateFormatting = true
+
+        search.placeholderString = "Search words and translations"
+        search.sendsSearchStringImmediately = true
+        search.target = self
+        search.action = #selector(reload)
+
+        for column in HISTORY_COLUMNS {
+            let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.id))
+            tableColumn.title = column.title
+            tableColumn.width = column.width
+            table.addTableColumn(tableColumn)
+        }
+        table.rowHeight = HISTORY_ROW_HEIGHT
+        table.usesAlternatingRowBackgroundColors = true
+        table.allowsMultipleSelection = true
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.action = #selector(speakClickedRow)
+        table.onDelete = { [weak self] in self?.deleteSelectedRows() }
+
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+
+        let stack = NSStackView(views: [search, scroll])
+        stack.orientation = .vertical
+        stack.spacing = HISTORY_SPACING
+        stack.edgeInsets = NSEdgeInsets(top: HISTORY_SPACING, left: HISTORY_SPACING, bottom: HISTORY_SPACING, right: HISTORY_SPACING)
+        window.contentView = stack
+
+        history.onChange = { [weak self] in self?.reload() }
+    }
+
+    func show() {
+        reload()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func reload() {
+        let query = search.stringValue.trimmingCharacters(in: .whitespaces)
+        shown = query.isEmpty ? history.entries : history.entries.filter { $0.matches(query) }
+        table.reloadData()
+    }
+
+    @objc private func speakClickedRow() {
+        guard shown.indices.contains(table.clickedRow) else { return }
+        onSpeak?(shown[table.clickedRow].word)
+    }
+
+    private func deleteSelectedRows() {
+        history.remove(Set(table.selectedRowIndexes.map { shown[$0].word }))
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { shown.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let id = tableColumn?.identifier else { return nil }
+        let entry = shown[row]
+        let view = cell(id)
+        switch id.rawValue {
+        case "word":
+            view.textField?.attributedStringValue = twoLines(entry.word, entry.translation.phonetic.map { "[\($0)]" })
+        case "translation":
+            let meanings = entry.translation.dictionary.map { "\($0.partOfSpeech): \($0.terms.joined(separator: ", "))" }
+            view.textField?.attributedStringValue = twoLines(entry.translation.text, meanings.isEmpty ? nil : meanings.joined(separator: "; "))
+            view.toolTip = ([entry.translation.text] + meanings).joined(separator: "\n")
+        case "count":
+            view.textField?.stringValue = "×\(entry.count)"
+        default:
+            view.textField?.stringValue = dateFormatter.string(from: entry.lastLookedUp)
+        }
+        return view
+    }
+
+    private func cell(_ id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        if let reused = table.makeView(withIdentifier: id, owner: self) as? NSTableCellView { return reused }
+        let view = NSTableCellView()
+        view.identifier = id
+        let field = NSTextField(labelWithString: "")
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.truncatesLastVisibleLine = true
+        field.maximumNumberOfLines = 2
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(field)
+        view.textField = field
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: HISTORY_CELL_INSET),
+            field.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -HISTORY_CELL_INSET),
+            field.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        return view
+    }
+
+    // Each line is cut with an ellipsis instead of wrapping.
+    private func twoLines(_ main: String, _ detail: String?) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let text = NSMutableAttributedString(string: main, attributes: [
+            .foregroundColor: NSColor.labelColor,
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .paragraphStyle: paragraph,
+        ])
+        if let detail {
+            text.append(NSAttributedString(string: "\n\(detail)", attributes: [
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .paragraphStyle: paragraph,
+            ]))
+        }
+        return text
     }
 }
 
@@ -483,6 +712,12 @@ final class DoubleTap {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let speaker = Speaker()
     private let popup = Popup()
+    private let history = History()
+    private lazy var historyWindow: HistoryWindow = {
+        let window = HistoryWindow(history: history)
+        window.onSpeak = { [weak self] word in self?.speaker.speak(word) }
+        return window
+    }()
     private var statusItem: NSStatusItem?
     private var hotKey: HotKey?
     private var doubleTap: DoubleTap?
@@ -496,6 +731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let speed = SPEECH_SPEEDS.first(where: { $0.title == savedSpeed }) { speaker.speed = speed }
         if let voice = UserDefaults.standard.string(forKey: VOICE_KEY), PHONON_VOICES.contains(voice) { speaker.voice = voice }
         setUpMenu()
+        setUpShortcuts()
 
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         NSLog("Accessibility trusted: %d", AXIsProcessTrustedWithOptions(prompt))
@@ -527,11 +763,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self, self.currentWord == word else { return }
             switch result {
             case .success(let translation):
+                self.history.record(word, translation: translation)
                 self.popup.show(word: word, translation: translation, status: speechHint)
             case .failure(let error):
                 self.popup.show(word: word, translation: nil, status: "Translation failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    @objc private func showHistory() {
+        historyWindow.show()
+    }
+
+    // A menu bar app shows no main menu, but text fields still need its Edit shortcuts, and windows ⌘W.
+    private func setUpShortcuts() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+
+        let main = NSMenu()
+        for submenu in [NSMenu(title: "Word Popup"), edit, window] {
+            let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            main.addItem(item)
+        }
+        NSApp.mainMenu = main
     }
 
     private func setUpMenu() {
@@ -540,6 +802,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
+        menu.addItem(withTitle: "History…", action: #selector(showHistory), keyEquivalent: "")
         menu.addItem(speedMenuItem())
         menu.addItem(voiceMenuItem())
         menu.addItem(withTitle: "Accessibility permission…", action: #selector(openAccessibilitySettings), keyEquivalent: "")

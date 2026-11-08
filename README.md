@@ -5,6 +5,7 @@ A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** 
 The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
 
 - Click 🔊 in the pop-up to hear the word again.
+- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
 - Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
 - Translations come from Google Translate's public endpoint, so the selected text is sent to Google.
@@ -126,6 +127,7 @@ To start the app at login, add `~/Applications/Word Popup.app` in System Setting
 pkill -x WordPopup; rm -rf ~/Applications/Word\ Popup.app
 tccutil reset Accessibility local.vitaly.word-popup
 defaults delete local.vitaly.word-popup
+rm -rf ~/Library/Application\ Support/Word\ Popup
 brew uninstall ptts
 rm -rf ~/.cache/huggingface/hub/models--gradium--phonon-31m-en ~/.cache/huggingface/hub/models--gradium--phonon-voices
 ```
