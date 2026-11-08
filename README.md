@@ -132,13 +132,6 @@ defaults delete local.vitaly.word-popup
 rm -rf ~/Library/Application\ Support/Word\ Popup
 ```
 
-Earlier versions spoke through Gradium's `ptts` command. If it's still installed, remove it and its model cache:
-
-```bash
-brew uninstall ptts
-rm -rf ~/.cache/huggingface/hub/models--gradium--phonon-31m-en ~/.cache/huggingface/hub/models--gradium--phonon-voices
-```
-
 **👤** Then delete the **Word Popup Signing** certificate in Keychain Access, from both the login and the System keychain.
 
 ## Development
