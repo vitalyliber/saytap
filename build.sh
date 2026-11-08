@@ -5,7 +5,7 @@ cd "${0:A:h}"
 
 APP="$HOME/Applications/Word Popup.app"
 CERTIFICATE="Word Popup Signing"
-MINIMUM_MACOS="15.0"
+MINIMUM_MACOS="26.0"
 
 if ! security find-certificate -c "$CERTIFICATE" >/dev/null 2>&1; then
   echo "No \"$CERTIFICATE\" certificate in the keychain. Create it first: see Install in README.md." >&2

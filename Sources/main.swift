@@ -1,10 +1,26 @@
 import AVFoundation
 import Carbon.HIToolbox
 import Cocoa
+import CoreServices
+import Translation
 
 // MARK: - Settings
 
-let TARGET_LANGUAGE = "ru"
+let SOURCE_LANGUAGE = "en"
+let TARGET_LANGUAGE_KEY = "targetLanguage"
+let DEFAULT_TARGET_LANGUAGE = "es"
+// Google's codes where they differ from the dictionaries' language identifiers.
+let GOOGLE_LANGUAGE_CODES = ["zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "zh-Hant-HK": "zh-TW", "yue-Hant": "yue"]
+let TRANSLATION_LANGUAGES_SETTINGS = "System Settings → General → Language & Region → Translation Languages"
+let HTTP_TOO_MANY_REQUESTS = 429
+let INDEX_LANGUAGE_KEY = "DCSDictionaryIndexLanguage"
+let DESCRIPTION_LANGUAGE_KEY = "DCSDictionaryDescriptionLanguage"
+let ENTRY_XHTML_VERSION = 0
+let MAX_DICTIONARY_RECORDS = 3
+let MAIN_TRANSLATION_TERMS = 2
+let TRAILING_PUNCTUATION = CharacterSet(charactersIn: ",;:/ ")
+// Separators and grammar labels (impf, pf, m pl) the dictionary adds for display.
+let HIDDEN_ENTRY_CLASSES: Set<String> = ["gp", "tgr"]
 
 struct SpeechSpeed {
     let title: String
@@ -27,7 +43,6 @@ let VOICE_KEY = "voice"
 let VOICE_SAMPLE = "Hello, this is how I sound."
 
 let PHONON_VOICES = ["Harper", "Hadley", "Everly", "Maeve", "Edwin", "Spencer"]
-let PHONON_LANGUAGE = "en"
 let PHONON_EXECUTABLES = ["/opt/homebrew/bin/ptts", "/usr/local/bin/ptts"]
 let PHONON_INSTALL_HINT = "brew install gradium-ai/tap/ptts"
 
@@ -150,28 +165,68 @@ struct Translation: Codable {
     var dictionary: [DictionaryEntry]
 }
 
+struct TranslationFailure: Error {
+    let message: String
+}
+
+// Words come from the bilingual dictionary that ships with macOS. Phrases it doesn't have go to Google,
+// and to Apple's on-device translation when Google fails or limits requests.
 enum Translator {
-    static func translate(_ text: String, completion: @escaping (Result<Translation, Error>) -> Void) {
+    static func translate(_ text: String, to language: String, completion: @escaping (Result<Translation, TranslationFailure>) -> Void) {
+        if let entry = BilingualDictionary.lookUp(text, in: language) {
+            completion(.success(entry))
+            return
+        }
+        translateWithGoogle(text, to: language) { google in
+            guard case .failure(let googleFailure) = google else { return completion(google) }
+            translateWithApple(text, to: language) { apple in
+                let hint = "To translate phrases offline, add \(languageName(language)) in \(TRANSLATION_LANGUAGES_SETTINGS)."
+                completion(apple.map { .success($0) } ?? .failure(TranslationFailure(message: "\(googleFailure.message) \(hint)")))
+            }
+        }
+    }
+
+    static func languageName(_ language: String) -> String {
+        Locale.current.localizedString(forIdentifier: language) ?? language
+    }
+
+    private static func translateWithGoogle(_ text: String, to language: String,
+                                            completion: @escaping (Result<Translation, TranslationFailure>) -> Void) {
         var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
         components.queryItems = [
             URLQueryItem(name: "client", value: "gtx"),
             URLQueryItem(name: "sl", value: "auto"),
-            URLQueryItem(name: "tl", value: TARGET_LANGUAGE),
+            URLQueryItem(name: "tl", value: GOOGLE_LANGUAGE_CODES[language] ?? language),
             URLQueryItem(name: "dt", value: "t"),
             URLQueryItem(name: "dt", value: "bd"),
             URLQueryItem(name: "dt", value: "rm"),
             URLQueryItem(name: "q", value: text),
         ]
 
-        URLSession.shared.dataTask(with: components.url!) { data, _, error in
-            let result: Result<Translation, Error>
-            if let data, let translation = parse(data) {
+        URLSession.shared.dataTask(with: components.url!) { data, response, error in
+            let result: Result<Translation, TranslationFailure>
+            if (response as? HTTPURLResponse)?.statusCode == HTTP_TOO_MANY_REQUESTS {
+                result = .failure(TranslationFailure(message: "Google is limiting translations right now."))
+            } else if let data, let translation = parse(data) {
                 result = .success(translation)
             } else {
-                result = .failure(error ?? URLError(.cannotParseResponse))
+                let reason = (error ?? URLError(.cannotParseResponse)).localizedDescription
+                result = .failure(TranslationFailure(message: "Google Translate failed: \(reason)"))
             }
             DispatchQueue.main.async { completion(result) }
         }.resume()
+    }
+
+    // Works only when the language is downloaded in System Settings; nil otherwise.
+    private static func translateWithApple(_ text: String, to language: String, completion: @escaping (Translation?) -> Void) {
+        Task {
+            let session = TranslationSession(installedSource: Locale.Language(identifier: SOURCE_LANGUAGE),
+                                             target: Locale.Language(identifier: language))
+            let response = try? await session.translate(text)
+            await MainActor.run {
+                completion(response.map { Translation(text: $0.targetText, phonetic: nil, dictionary: []) })
+            }
+        }
     }
 
     // Response shape: [[[translated, original, …], …, [null, null, translit, source translit]], [[pos, [terms], …], …], …]
@@ -188,6 +243,100 @@ enum Translator {
             return DictionaryEntry(partOfSpeech: partOfSpeech, terms: Array(terms.prefix(MAX_DICTIONARY_TERMS)))
         }
         return Translation(text: text, phonetic: phonetic, dictionary: dictionary)
+    }
+}
+
+@_silgen_name("DCSCopyAvailableDictionaries") private func DCSCopyAvailableDictionaries() -> Unmanaged<CFSet>?
+@_silgen_name("DCSDictionaryGetLanguages") private func DCSDictionaryGetLanguages(_ dictionary: DCSDictionary) -> Unmanaged<CFArray>?
+@_silgen_name("DCSCopyRecordsForSearchString")
+private func DCSCopyRecordsForSearchString(_ dictionary: DCSDictionary, _ text: CFString,
+                                           _ method: UnsafeRawPointer?, _ maxResults: UnsafeRawPointer?) -> Unmanaged<CFArray>?
+@_silgen_name("DCSRecordCopyData") private func DCSRecordCopyData(_ record: CFTypeRef, _ version: Int) -> Unmanaged<CFString>?
+@_silgen_name("DCSRecordGetHeadword") private func DCSRecordGetHeadword(_ record: CFTypeRef) -> Unmanaged<CFString>?
+
+// The bilingual dictionaries that come with macOS, read through private DictionaryServices calls: the public API
+// only searches the dictionaries ticked in Dictionary.app and returns an entry as one line of plain text.
+// Oxford entries mark parts of speech, translations and examples with classes, so they can be split up.
+enum BilingualDictionary {
+    // Target language → dictionary, for every dictionary that translates from English.
+    static let byLanguage: [String: DCSDictionary] = {
+        var found: [String: DCSDictionary] = [:]
+        let dictionaries = (DCSCopyAvailableDictionaries()?.takeRetainedValue() as? Set<AnyHashable>) ?? []
+        for case let dictionary as DCSDictionary in dictionaries {
+            let pairs = DCSDictionaryGetLanguages(dictionary)?.takeUnretainedValue() as? [[String: String]] ?? []
+            for pair in pairs where pair[INDEX_LANGUAGE_KEY] == SOURCE_LANGUAGE {
+                if let language = pair[DESCRIPTION_LANGUAGE_KEY], language != SOURCE_LANGUAGE, found[language] == nil {
+                    found[language] = dictionary
+                }
+            }
+        }
+        return found
+    }()
+
+    // A dictionary that isn't downloaded yet returns no records, so the phrase translators take over.
+    // A phrasal verb comes back as its verb's whole entry, so only its own section is read.
+    static func lookUp(_ text: String, in language: String) -> Translation? {
+        guard let dictionary = byLanguage[language] else { return nil }
+        let records = DCSCopyRecordsForSearchString(dictionary, text as CFString, nil, nil)?.takeRetainedValue() as? [AnyObject] ?? []
+        var phonetic: String?
+        var entries: [DictionaryEntry] = []
+        for record in records.prefix(MAX_DICTIONARY_RECORDS) {
+            guard let xhtml = DCSRecordCopyData(record, ENTRY_XHTML_VERSION)?.takeRetainedValue() as String?,
+                  let body = (try? XMLDocument(xmlString: xhtml, options: [.nodeLoadExternalEntitiesNever]))?.rootElement()
+            else { continue }
+            let headword = DCSRecordGetHeadword(record)?.takeUnretainedValue() as String? ?? text
+            let phrasalVerb = elements(in: body, withClass: "pvsec").first { section in
+                elements(in: section, withClass: "pv").first.map { collapsed($0.stringValue ?? "") }?
+                    .caseInsensitiveCompare(headword) == .orderedSame
+            }
+            if phrasalVerb == nil {
+                phonetic = phonetic ?? elements(in: body, withClass: "ph").first.map(plainText)
+            }
+            for group in elements(in: phrasalVerb ?? body, withClass: "gramb", skipping: phrasalVerb == nil ? ["pvsec"] : []) {
+                var terms: [String] = []
+                for term in elements(in: group, withClass: "trans", skipping: ["exg"]).map(plainText)
+                where !term.isEmpty && !terms.contains(term) {
+                    terms.append(term)
+                }
+                guard !terms.isEmpty else { continue }
+                let partOfSpeech = elements(in: group, withClass: "ps").first.map(plainText) ?? ""
+                entries.append(DictionaryEntry(partOfSpeech: partOfSpeech, terms: Array(terms.prefix(MAX_DICTIONARY_TERMS))))
+            }
+        }
+        guard let first = entries.first else { return nil }
+        return Translation(text: first.terms.prefix(MAIN_TRANSLATION_TERMS).joined(separator: ", "), phonetic: phonetic, dictionary: entries)
+    }
+
+    // Walks the tree by hand: XMLNode's relative XPath (".//text()") also returns text after the node.
+    private static func elements(in node: XMLNode, withClass name: String, skipping skipped: Set<String> = []) -> [XMLNode] {
+        (node.children ?? []).flatMap { child -> [XMLNode] in
+            let childClasses = classes(of: child)
+            if !childClasses.isDisjoint(with: skipped) { return [] }
+            return childClasses.contains(name) ? [child] : elements(in: child, withClass: name, skipping: skipped)
+        }
+    }
+
+    private static func classes(of node: XMLNode) -> Set<String> {
+        Set(((node as? XMLElement)?.attribute(forName: "class")?.stringValue ?? "").split(separator: " ").map(String.init))
+    }
+
+    // The node's words without the separators and grammar labels the dictionary adds for display.
+    // A verb's imperfective and perfective forms stay apart: "вводить в комнату / ввести в комнату".
+    private static func plainText(_ node: XMLNode) -> String {
+        let forms = elements(in: node, withClass: "tfrm")
+        let text = forms.isEmpty ? visibleText(node) : forms.map(visibleText).map(collapsed).joined(separator: " / ")
+        // A removed case label leaves "(с )"; close the gap.
+        return collapsed(text).replacingOccurrences(of: " )", with: ")").trimmingCharacters(in: TRAILING_PUNCTUATION)
+    }
+
+    private static func visibleText(_ node: XMLNode) -> String {
+        if node.kind == .text { return node.stringValue ?? "" }
+        if !classes(of: node).isDisjoint(with: HIDDEN_ENTRY_CLASSES) { return "" }
+        return (node.children ?? []).map(visibleText).joined()
+    }
+
+    private static func collapsed(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }
 
@@ -465,7 +614,7 @@ final class Speaker {
                           completion: @escaping (Bool) -> Void) {
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["--lang", PHONON_LANGUAGE, "--voice", voice, "--condition", "duration_delta=\(delta)",
+        process.arguments = ["--lang", SOURCE_LANGUAGE, "--voice", voice, "--condition", "duration_delta=\(delta)",
                              "-o", file.path, "--", text]
         var environment = ProcessInfo.processInfo.environment
         if offline { environment["HF_HUB_OFFLINE"] = "1" }
@@ -722,6 +871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKey: HotKey?
     private var doubleTap: DoubleTap?
     private var currentWord = ""
+    private var targetLanguage = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         popup.onReplay = { [weak self] in self.map { $0.speaker.speak($0.currentWord) } }
@@ -730,6 +880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let savedSpeed = UserDefaults.standard.string(forKey: SPEED_KEY)
         if let speed = SPEECH_SPEEDS.first(where: { $0.title == savedSpeed }) { speaker.speed = speed }
         if let voice = UserDefaults.standard.string(forKey: VOICE_KEY), PHONON_VOICES.contains(voice) { speaker.voice = voice }
+        targetLanguage = UserDefaults.standard.string(forKey: TARGET_LANGUAGE_KEY) ?? AppDelegate.preferredTargetLanguage()
         setUpMenu()
         setUpShortcuts()
 
@@ -759,16 +910,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         popup.show(word: word, translation: nil, status: "Translating…", at: NSEvent.mouseLocation)
         let speechHint = Speaker.executable == nil ? "To hear words: \(PHONON_INSTALL_HINT)" : nil
 
-        Translator.translate(word) { [weak self] result in
+        Translator.translate(word, to: targetLanguage) { [weak self] result in
             guard let self, self.currentWord == word else { return }
             switch result {
             case .success(let translation):
                 self.history.record(word, translation: translation)
                 self.popup.show(word: word, translation: translation, status: speechHint)
-            case .failure(let error):
-                self.popup.show(word: word, translation: nil, status: "Translation failed: \(error.localizedDescription)")
+            case .failure(let failure):
+                self.popup.show(word: word, translation: nil, status: failure.message)
             }
         }
+    }
+
+    // The preferred languages in System Settings → Language & Region first, then the rest by name.
+    private static func targetLanguages() -> (preferred: [String], others: [String]) {
+        var others = BilingualDictionary.byLanguage.keys.sorted { Translator.languageName($0) < Translator.languageName($1) }
+        var preferred: [String] = []
+        for identifier in Locale.preferredLanguages {
+            if let index = others.firstIndex(where: { sameLanguage($0, identifier) }) { preferred.append(others.remove(at: index)) }
+        }
+        return (preferred, others)
+    }
+
+    private static func preferredTargetLanguage() -> String {
+        let languages = targetLanguages()
+        return languages.preferred.first ?? languages.others.first ?? DEFAULT_TARGET_LANGUAGE
+    }
+
+    // Same language and script, so Simplified Chinese doesn't match Traditional.
+    private static func sameLanguage(_ lhs: String, _ rhs: String) -> Bool {
+        let (left, right) = (Locale.Language(identifier: lhs), Locale.Language(identifier: rhs))
+        return left.languageCode == right.languageCode
+            && Locale.Language(identifier: left.maximalIdentifier).script == Locale.Language(identifier: right.maximalIdentifier).script
+    }
+
+    private func targetLanguageMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        let languages = AppDelegate.targetLanguages()
+        for group in [languages.preferred, languages.others] where !group.isEmpty {
+            if submenu.numberOfItems > 0 { submenu.addItem(.separator()) }
+            for language in group {
+                let option = submenu.addItem(withTitle: Translator.languageName(language), action: #selector(changeTargetLanguage), keyEquivalent: "")
+                option.target = self
+                option.representedObject = language
+                option.state = language == targetLanguage ? .on : .off
+            }
+        }
+        let item = NSMenuItem(title: "Translate to", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func changeTargetLanguage(_ sender: NSMenuItem) {
+        guard let language = sender.representedObject as? String else { return }
+        targetLanguage = language
+        UserDefaults.standard.set(language, forKey: TARGET_LANGUAGE_KEY)
+        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
     }
 
     @objc private func showHistory() {
@@ -803,6 +1000,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
         menu.addItem(withTitle: "History…", action: #selector(showHistory), keyEquivalent: "")
+        menu.addItem(targetLanguageMenuItem())
         menu.addItem(speedMenuItem())
         menu.addItem(voiceMenuItem())
         menu.addItem(withTitle: "Accessibility permission…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
