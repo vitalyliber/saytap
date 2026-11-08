@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saytap — hear and translate any word on your Mac</title>
+  <meta name="description" content="Select an English word anywhere on your Mac, tap Option twice, and hear it spoken while its translation pops up next to the cursor. Free and open source.">
+  <meta property="og:title" content="Saytap — hear and translate any word on your Mac">
+  <meta property="og:description" content="Select a word, tap ⌥ twice: hear it spoken on-device and see its dictionary translation.">
+  <meta property="og:image" content="https://vitalyliber.github.io/saytap/images/playful-word.png">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" href="images/icon.png">
+  <link rel="apple-touch-icon" href="images/icon.png">
+  <style>
+    :root {
+      --purple: #7b5cff;
+      --pink: #ff5fa2;
+      --gradient: linear-gradient(135deg, var(--purple), var(--pink));
+      --bg: #fbfaff;
+      --surface: #ffffff;
+      --text: #1d1b26;
+      --muted: #625e73;
+      --line: #ebe8f5;
+      --code-bg: #f3f1fb;
+      --shadow: 0 18px 50px rgba(83, 52, 170, 0.18);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121018;
+        --surface: #1c1a24;
+        --text: #f3f1fa;
+        --muted: #a9a4bb;
+        --line: #2c2938;
+        --code-bg: #24212f;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    img { max-width: 100%; height: auto; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; text-decoration: none; }
+    .brand img { width: 36px; height: 36px; }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 15px; }
+    .nav-link:hover { color: var(--text); }
+
+    .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 48px 0 80px; }
+    h1 {
+      font: 800 clamp(40px, 6vw, 64px)/1.05 ui-rounded, -apple-system, BlinkMacSystemFont, sans-serif;
+      letter-spacing: -0.02em;
+      margin: 0 0 20px;
+    }
+    .accent { background: var(--gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { font-size: 20px; color: var(--muted); margin: 0 0 32px; max-width: 30em; }
+    .keys { display: inline-flex; gap: 4px; vertical-align: 2px; }
+    kbd {
+      display: inline-block; min-width: 1.9em; padding: 1px 7px; border-radius: 7px; text-align: center;
+      font: 600 0.85em/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--surface); border: 1px solid var(--line); box-shadow: 0 2px 0 var(--line); color: var(--text);
+    }
+    .buttons { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .button {
+      display: inline-flex; align-items: center; gap: 10px; padding: 14px 24px; border-radius: 14px;
+      font-weight: 650; text-decoration: none; transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .button:hover { transform: translateY(-1px); }
+    .primary { background: var(--gradient); color: #fff; box-shadow: 0 10px 24px rgba(123, 92, 255, 0.35); }
+    .primary:hover { box-shadow: 0 14px 30px rgba(123, 92, 255, 0.45); }
+    .secondary { background: var(--surface); border: 1px solid var(--line); }
+    .button svg { width: 20px; height: 20px; fill: currentColor; }
+    .note { margin-top: 18px; font-size: 14px; color: var(--muted); }
+
+    .demo { position: relative; }
+    .demo-text {
+      font-size: 19px; color: var(--muted); margin: 0 0 18px 8px; line-height: 1.5;
+    }
+    .demo-text mark { background: rgba(123, 92, 255, 0.22); color: var(--text); border-radius: 4px; padding: 1px 3px; }
+    .demo img { display: block; width: 100%; max-width: 460px; filter: drop-shadow(var(--shadow)); }
+
+    section { padding: 72px 0; }
+    h2 { font: 750 clamp(28px, 4vw, 38px)/1.15 ui-rounded, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0 0 12px; letter-spacing: -0.01em; }
+    .section-lead { color: var(--muted); margin: 0 0 40px; max-width: 36em; }
+
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+    .card .icon {
+      width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 14px;
+      background: var(--gradient); color: #fff; font-size: 22px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 18px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+    .styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: start; }
+    .styles figure { margin: 0; }
+    .styles img { filter: drop-shadow(var(--shadow)); }
+    .styles figcaption { margin-top: 12px; text-align: center; font-size: 14px; color: var(--muted); }
+
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; counter-reset: step; }
+    .step { counter-increment: step; position: relative; padding-top: 44px; }
+    .step::before {
+      content: counter(step); position: absolute; top: 0; left: 0; width: 32px; height: 32px; border-radius: 50%;
+      display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--gradient);
+    }
+    .step h3 { margin: 0 0 6px; font-size: 17px; }
+    .step p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    .install {
+      background: var(--gradient); color: #fff; border-radius: 28px; padding: 48px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center;
+    }
+    .install h2 { color: #fff; }
+    .install p { color: rgba(255, 255, 255, 0.85); margin: 0 0 24px; }
+    .install .button { background: #fff; color: #5a3ee0; }
+    pre {
+      margin: 0; padding: 20px 22px; border-radius: 16px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+      background: rgba(20, 10, 50, 0.35); color: #fff; font: 14.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    pre .comment { color: rgba(255, 255, 255, 0.6); }
+
+    footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+    footer a { color: var(--muted); }
+
+    @media (max-width: 860px) {
+      .hero, .install { grid-template-columns: 1fr; }
+      .hero { padding-top: 24px; }
+      .features, .styles { grid-template-columns: 1fr 1fr; }
+      .steps { grid-template-columns: 1fr 1fr; }
+      .install { padding: 32px 24px; }
+    }
+    @media (max-width: 560px) {
+      .features, .styles, .steps { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="./"><img src="images/icon.png" alt="">Saytap</a>
+      <a class="nav-link" href="https://github.com/vitalyliber/saytap">GitHub</a>
+    </nav>
+
+    <header class="hero">
+      <div>
+        <h1>Hear it.<br><span class="accent">Understand it.</span></h1>
+        <p class="lead">
+          Select an English word anywhere on your Mac and tap
+          <span class="keys"><kbd>⌥</kbd><kbd>⌥</kbd></span>.
+          Saytap says it out loud and shows its translation right next to the cursor.
+        </p>
+        <div class="buttons">
+          <a class="button primary" href="https://github.com/vitalyliber/saytap#install">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg>
+            Download on GitHub
+          </a>
+          <a class="button secondary" href="https://github.com/vitalyliber/saytap">View source</a>
+        </div>
+        <p class="note">Free and open source · macOS 26 or later · Apple silicon</p>
+      </div>
+      <div class="demo">
+        <p class="demo-text">Ships sheltered in the <mark>harbour</mark> until the storm passed.</p>
+        <img src="images/playful-word.png" width="1020" height="468" alt="The Saytap pop-up for the word harbour: transcription, translation and dictionary meanings">
+      </div>
+    </header>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Made for reading in English</h2>
+      <p class="section-lead">No copying, no switching apps, no browser tabs. One gesture, and you know how a word sounds and what it means.</p>
+      <div class="features">
+        <div class="card">
+          <div class="icon">🔊</div>
+          <h3>A natural voice, on your Mac</h3>
+          <p>Speech comes from Phonon, an open text-to-speech model running on the Neural Engine. A word starts playing in about 20 ms, and nothing is sent anywhere.</p>
+        </div>
+        <div class="card">
+          <div class="icon">📖</div>
+          <h3>Dictionary meanings</h3>
+          <p>Words and phrasal verbs come from the Oxford bilingual dictionary built into macOS, with transcription and meanings by part of speech. Offline.</p>
+        </div>
+        <div class="card">
+          <div class="icon">💬</div>
+          <h3>Phrases and sentences</h3>
+          <p>Longer text is translated by Google Translate, with Apple's on-device Translation taking over when Google is slow.</p>
+        </div>
+        <div class="card">
+          <div class="icon">⌥</div>
+          <h3>Works in every app</h3>
+          <p>Safari, Notes, PDFs, your code editor. A quick double tap of Option, so your usual shortcuts keep working.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🕘</div>
+          <h3>Your own word list</h3>
+          <p>Every look-up is saved to a searchable history on your Mac. Listen to a word again, or delete it once you've learnt it.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🎚</div>
+          <h3>Your voice, your pace</h3>
+          <p>Six voices and eight speeds, from 0.25× for tricky words to 2× for a quick check.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Pick a look</h2>
+      <p class="section-lead">From playful to prim: four styles to choose from in the menu bar.</p>
+      <div class="styles">
+        <figure>
+          <img src="images/playful-phrase.png" width="1020" height="336" alt="A translated sentence in the Playful style">
+          <figcaption>Playful</figcaption>
+        </figure>
+        <figure>
+          <img src="images/minimal-word.png" width="1020" height="453" alt="The Minimal style">
+          <figcaption>Minimal</figcaption>
+        </figure>
+        <figure>
+          <img src="images/formal-word.png" width="1020" height="465" alt="The Formal style">
+          <figcaption>Formal</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="section-lead">Each look-up stops at the first source that answers, so most words never leave your Mac.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Oxford dictionary</h3>
+          <p>Built into macOS. Instant and offline, for words and phrasal verbs.</p>
+        </div>
+        <div class="step">
+          <h3>Your history</h3>
+          <p>A phrase you've looked up before is answered from your Mac.</p>
+        </div>
+        <div class="step">
+          <h3>Google Translate</h3>
+          <p>For sentences the dictionary doesn't have.</p>
+        </div>
+        <div class="step">
+          <h3>Apple Translation</h3>
+          <p>On-device, when Google doesn't answer within a second.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="install">
+        <div>
+          <h2>Get Saytap</h2>
+          <p>Saytap is free and open source. You build it on your own Mac and sign it with your own certificate, so macOS trusts it with the selected text. The guide on GitHub walks you, or your AI coding agent, through it in about ten minutes.</p>
+          <a class="button" href="https://github.com/vitalyliber/saytap#install">Download on GitHub</a>
+        </div>
+        <pre><span class="comment"># after creating the signing certificate</span>
+git clone https://github.com/vitalyliber/saytap.git
+cd saytap
+./build.sh</pre>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <footer>
+      <span>Saytap · MIT License · Speech by <a href="https://gradium.ai/phonon">Phonon</a></span>
+      <a href="https://github.com/vitalyliber/saytap">github.com/vitalyliber/saytap</a>
+    </footer>
+  </div>
+</body>
+</html>
