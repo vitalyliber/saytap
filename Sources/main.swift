@@ -8,6 +8,16 @@ let TARGET_LANGUAGE = "ru"
 let SPEECH_LANGUAGE_PREFIX = "en"
 let PREFERRED_SPEECH_REGION = "en-US"
 
+let SPEECH_SPEEDS: [(title: String, rate: Float)] = [
+    ("Very slow", 0.3),
+    ("Slow", 0.4),
+    ("Normal", AVSpeechUtteranceDefaultSpeechRate),
+    ("Fast", 0.55),
+    ("Very fast", 0.6),
+]
+let SPEECH_RATE_KEY = "speechRate"
+let SPEED_SAMPLE = "This is how fast I speak."
+
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
 let HOTKEY_LABEL = "⌃⌥T"
@@ -148,11 +158,13 @@ enum Translator {
 final class Speaker {
     private let synthesizer = AVSpeechSynthesizer()
     private lazy var voice = bestEnglishVoice()
+    var rate = AVSpeechUtteranceDefaultSpeechRate
 
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
+        utterance.rate = rate
         synthesizer.speak(utterance)
     }
 
@@ -345,6 +357,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         popup.onReplay = { [weak self] in self.map { $0.speaker.speak($0.currentWord) } }
         hotKey = HotKey(keyCode: HOTKEY_KEY_CODE, modifiers: HOTKEY_MODIFIERS) { [weak self] in self?.lookUpSelection() }
+        UserDefaults.standard.register(defaults: [SPEECH_RATE_KEY: AVSpeechUtteranceDefaultSpeechRate])
+        speaker.rate = UserDefaults.standard.float(forKey: SPEECH_RATE_KEY)
         setUpMenu()
 
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -389,12 +403,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Speak & translate selection (\(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
+        menu.addItem(speedMenuItem())
         menu.addItem(withTitle: "Accessibility settings…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Word Popup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
         item.menu = menu
         statusItem = item
+    }
+
+    private func speedMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        for speed in SPEECH_SPEEDS {
+            let option = submenu.addItem(withTitle: speed.title, action: #selector(changeSpeed), keyEquivalent: "")
+            option.target = self
+            option.representedObject = speed.rate
+            option.state = speed.rate == speaker.rate ? .on : .off
+        }
+        let item = NSMenuItem(title: "Speed", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func changeSpeed(_ sender: NSMenuItem) {
+        guard let rate = sender.representedObject as? Float else { return }
+        speaker.rate = rate
+        UserDefaults.standard.set(rate, forKey: SPEECH_RATE_KEY)
+        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
+        speaker.speak(currentWord.isEmpty ? SPEED_SAMPLE : currentWord)
     }
 
     @objc private func openAccessibilitySettings() {

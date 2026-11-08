@@ -3,6 +3,7 @@
 A menu bar app for macOS. Select a word in any app and press **⌃⌥T**: the app reads it aloud and shows the Russian translation in a floating pop-up next to the cursor.
 
 - Click 🔊 in the pop-up to hear the word again.
+- Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
 - Translations come from Google Translate's public endpoint, so the selected text is sent to Google.
 - Speech uses the best installed English voice: Premium or Enhanced first, then en-US. Install more voices in System Settings → Accessibility → Spoken Content → System voice → Manage Voices.
@@ -33,6 +34,6 @@ tccutil reset Accessibility local.vitaly.word-popup
 
 ## Settings
 
-Settings are constants at the top of `Sources/main.swift`: target language, hotkey, pop-up lifetime and size. Rebuild after you change them.
+Settings are constants at the top of `Sources/main.swift`: target language, hotkey, speed presets, pop-up lifetime and size. Rebuild after you change them.
 
 To start the app at login, add it in System Settings → General → Login Items.
