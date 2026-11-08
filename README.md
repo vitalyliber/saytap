@@ -192,6 +192,8 @@ Phonon's version is pinned twice: the Swift package in `Package.swift` and the C
 
 Settings are constants in `Sources/Settings.swift`: voices (`PHONON_VOICES`; the model's 37 voices are in `build/Models-*/voices`), hotkey, double-tap modifier and timing, speed presets and the pop-up's size. Rebuild after you change them.
 
+`./dmg.sh` packs an app into `build/Saytap.dmg`, a disk image whose window shows the app, an arrow and Applications to drag it onto. It takes the app `build.sh` installed, or the path of another build: `./dmg.sh path/to/Saytap.app`. To give it to others, build the app signed with a Developer ID and notarized, then run `DEVELOPER_ID="Developer ID Application: …" NOTARY_PROFILE=… ./dmg.sh path/to/Saytap.app`: it signs the image, notarizes it and staples the ticket. `NOTARY_PROFILE` is a profile saved with `xcrun notarytool store-credentials`. `dmg-background.swift` draws the window's background.
+
 The website is `docs/index.html`, served by GitHub Pages from the `docs` folder.
 
 ## Credits
