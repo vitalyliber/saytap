@@ -5,26 +5,28 @@ import Cocoa
 // MARK: - Settings
 
 let TARGET_LANGUAGE = "ru"
-let SPEECH_LANGUAGE_PREFIX = "en"
-let PREFERRED_SPEECH_REGION = "en-US"
+
+struct SpeechSpeed {
+    let title: String
+    let phononDelta: Double
+    let playbackRate: Float
+}
 
 // Phonon's duration_delta only stretches speech by about ±10%, so the outer presets also change the playback rate.
-let SPEECH_SPEEDS: [(title: String, rate: Float, phononDelta: Double, phononPlaybackRate: Float)] = [
-    ("Very slow", 0.3, 0.3, 0.75),
-    ("Slow", 0.4, 0.3, 1),
-    ("Normal", AVSpeechUtteranceDefaultSpeechRate, 0, 1),
-    ("Fast", 0.55, -0.3, 1),
-    ("Very fast", 0.6, -0.3, 1.25),
+let SPEECH_SPEEDS = [
+    SpeechSpeed(title: "Very slow", phononDelta: 0.3, playbackRate: 0.75),
+    SpeechSpeed(title: "Slow", phononDelta: 0.3, playbackRate: 1),
+    SpeechSpeed(title: "Normal", phononDelta: 0, playbackRate: 1),
+    SpeechSpeed(title: "Fast", phononDelta: -0.3, playbackRate: 1),
+    SpeechSpeed(title: "Very fast", phononDelta: -0.3, playbackRate: 1.25),
 ]
-let SPEECH_RATE_KEY = "speechRate"
+let DEFAULT_SPEED_INDEX = 2
+let SPEED_KEY = "speed"
 let SPEED_SAMPLE = "This is how fast I speak."
-let VOICE_KEY = "voiceIdentifier"
-let AUTOMATIC_VOICE_TITLE = "Automatic (best installed)"
+let VOICE_KEY = "voice"
 let VOICE_SAMPLE = "Hello, this is how I sound."
-let VOICE_SETTINGS_URL = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent")!
 
 let PHONON_VOICES = ["Harper", "Hadley", "Everly", "Maeve", "Edwin", "Spencer"]
-let PHONON_VOICE_PREFIX = "phonon:"
 let PHONON_LANGUAGE = "en"
 let PHONON_EXECUTABLES = ["/opt/homebrew/bin/ptts", "/usr/local/bin/ptts"]
 let PHONON_INSTALL_HINT = "brew install gradium-ai/tap/ptts"
@@ -172,55 +174,11 @@ enum Translator {
 
 // MARK: - Speech
 
+// Speaks with Phonon by running the ptts command for each phrase. It first runs offline: asking Hugging Face
+// for updates takes most of a second. Only a voice that isn't downloaded yet needs the online run.
 final class Speaker {
-    private let synthesizer = AVSpeechSynthesizer()
-    private let phonon = PhononSpeaker()
-    var rate = AVSpeechUtteranceDefaultSpeechRate
-    var voiceIdentifier: String?
-
-    // A Phonon voice falls back to the Apple voice when ptts is missing or fails.
-    func speak(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
-        phonon.stop()
-        guard let identifier = voiceIdentifier, identifier.hasPrefix(PHONON_VOICE_PREFIX) else {
-            speakWithApple(text)
-            return
-        }
-        let speed = SPEECH_SPEEDS.first { $0.rate == rate } ?? SPEECH_SPEEDS.first { $0.rate == AVSpeechUtteranceDefaultSpeechRate }!
-        phonon.speak(text, voice: String(identifier.dropFirst(PHONON_VOICE_PREFIX.count)),
-                     delta: speed.phononDelta, playbackRate: speed.phononPlaybackRate) { [weak self] in
-            self?.speakWithApple(text)
-        }
-    }
-
-    private func speakWithApple(_ text: String) {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = voice
-        utterance.rate = rate
-        synthesizer.speak(utterance)
-    }
-
-    // The chosen voice, or the best installed one when none is chosen or it was removed.
-    private var voice: AVSpeechSynthesisVoice? {
-        voiceIdentifier.flatMap(AVSpeechSynthesisVoice.init(identifier:)) ?? Speaker.englishVoices().first
-    }
-
-    // Premium and Enhanced voices first; among equals, the preferred region.
-    static func englishVoices() -> [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix(SPEECH_LANGUAGE_PREFIX) && !$0.voiceTraits.contains(.isNoveltyVoice) }
-            .sorted { lhs, rhs in
-                if lhs.quality != rhs.quality { return lhs.quality.rawValue > rhs.quality.rawValue }
-                let lhsPreferred = lhs.language == PREFERRED_SPEECH_REGION
-                if lhsPreferred != (rhs.language == PREFERRED_SPEECH_REGION) { return lhsPreferred }
-                return lhs.name < rhs.name
-            }
-    }
-}
-
-// Runs the ptts command for each phrase. It first runs offline: asking Hugging Face for updates takes
-// most of a second. Only a voice that isn't downloaded yet needs the online run.
-final class PhononSpeaker {
+    var voice = PHONON_VOICES[0]
+    var speed = SPEECH_SPEEDS[DEFAULT_SPEED_INDEX]
     private var process: Process?
     private var player: AVAudioPlayer?
     private var request = 0
@@ -230,16 +188,18 @@ final class PhononSpeaker {
         PHONON_EXECUTABLES.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
     }
 
-    func speak(_ text: String, voice: String, delta: Double, playbackRate: Float, onFailure: @escaping () -> Void) {
-        request += 1
+    // Beeps when ptts is missing or fails.
+    func speak(_ text: String) {
+        stop()
         let current = request
+        let (voice, delta, playbackRate) = (voice, speed.phononDelta, speed.playbackRate)
         let key = "\(voice)|\(delta)|\(text)"
         if let cached, cached.key == key {
             play(cached.file, rate: playbackRate)
             return
         }
-        guard let executable = PhononSpeaker.executable else {
-            onFailure()
+        guard let executable = Speaker.executable else {
+            NSSound.beep()
             return
         }
 
@@ -251,7 +211,7 @@ final class PhononSpeaker {
                 self.cached = (key, file)
                 self.play(file, rate: playbackRate)
             } else {
-                onFailure()
+                NSSound.beep()
             }
         }
         generate(executable, text: text, voice: voice, delta: delta, to: file, offline: true) { [weak self] succeeded in
@@ -264,7 +224,7 @@ final class PhononSpeaker {
         }
     }
 
-    // Also invalidates the running request, so a terminated run doesn't fall back to speaking stale text.
+    // Also invalidates the running request, so a terminated run is ignored.
     func stop() {
         request += 1
         process?.terminate()
@@ -532,9 +492,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         popup.onReplay = { [weak self] in self.map { $0.speaker.speak($0.currentWord) } }
         hotKey = HotKey(keyCode: HOTKEY_KEY_CODE, modifiers: HOTKEY_MODIFIERS) { [weak self] in self?.lookUpSelection() }
         doubleTap = DoubleTap(modifier: DOUBLE_TAP_MODIFIER) { [weak self] in self?.lookUpSelection() }
-        UserDefaults.standard.register(defaults: [SPEECH_RATE_KEY: AVSpeechUtteranceDefaultSpeechRate])
-        speaker.rate = UserDefaults.standard.float(forKey: SPEECH_RATE_KEY)
-        speaker.voiceIdentifier = UserDefaults.standard.string(forKey: VOICE_KEY)
+        let savedSpeed = UserDefaults.standard.string(forKey: SPEED_KEY)
+        if let speed = SPEECH_SPEEDS.first(where: { $0.title == savedSpeed }) { speaker.speed = speed }
+        if let voice = UserDefaults.standard.string(forKey: VOICE_KEY), PHONON_VOICES.contains(voice) { speaker.voice = voice }
         setUpMenu()
 
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -561,12 +521,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentWord = word
         speaker.speak(word)
         popup.show(word: word, translation: nil, status: "Translating…", at: NSEvent.mouseLocation)
+        let speechHint = Speaker.executable == nil ? "To hear words: \(PHONON_INSTALL_HINT)" : nil
 
         Translator.translate(word) { [weak self] result in
             guard let self, self.currentWord == word else { return }
             switch result {
             case .success(let translation):
-                self.popup.show(word: word, translation: translation)
+                self.popup.show(word: word, translation: translation, status: speechHint)
             case .failure(let error):
                 self.popup.show(word: word, translation: nil, status: "Translation failed: \(error.localizedDescription)")
             }
@@ -594,8 +555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for speed in SPEECH_SPEEDS {
             let option = submenu.addItem(withTitle: speed.title, action: #selector(changeSpeed), keyEquivalent: "")
             option.target = self
-            option.representedObject = speed.rate
-            option.state = speed.rate == speaker.rate ? .on : .off
+            option.state = speed.title == speaker.speed.title ? .on : .off
         }
         let item = NSMenuItem(title: "Speed", action: nil, keyEquivalent: "")
         item.submenu = submenu
@@ -603,9 +563,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func changeSpeed(_ sender: NSMenuItem) {
-        guard let rate = sender.representedObject as? Float else { return }
-        speaker.rate = rate
-        UserDefaults.standard.set(rate, forKey: SPEECH_RATE_KEY)
+        guard let speed = SPEECH_SPEEDS.first(where: { $0.title == sender.title }) else { return }
+        speaker.speed = speed
+        UserDefaults.standard.set(speed.title, forKey: SPEED_KEY)
         sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
         speaker.speak(currentWord.isEmpty ? SPEED_SAMPLE : currentWord)
     }
@@ -618,46 +578,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
-    // Rebuilt on every open, so voices downloaded while the app runs show up.
+    // Rebuilt on every open, so installing ptts while the app runs shows the voices.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        addVoiceOption(AUTOMATIC_VOICE_TITLE, identifier: nil, to: menu)
-        menu.addItem(.separator())
-        for voice in Speaker.englishVoices() where voice.quality != .default {
-            addVoiceOption(voiceTitle(voice), identifier: voice.identifier, to: menu)
-        }
-        menu.addItem(withTitle: "Download more Apple voices…", action: #selector(openVoiceSettings), keyEquivalent: "").target = self
-
-        menu.addItem(.separator())
-        guard PhononSpeaker.executable != nil else {
-            menu.addItem(withTitle: "Phonon voices need: \(PHONON_INSTALL_HINT)", action: nil, keyEquivalent: "")
+        guard Speaker.executable != nil else {
+            menu.addItem(withTitle: "Speech needs: \(PHONON_INSTALL_HINT)", action: nil, keyEquivalent: "")
             return
         }
-        for name in PHONON_VOICES {
-            addVoiceOption("\(name) (Phonon)", identifier: PHONON_VOICE_PREFIX + name, to: menu)
+        for voice in PHONON_VOICES {
+            let option = menu.addItem(withTitle: voice, action: #selector(changeVoice), keyEquivalent: "")
+            option.target = self
+            option.state = voice == speaker.voice ? .on : .off
         }
-    }
-
-    @objc private func openVoiceSettings() {
-        NSWorkspace.shared.open(VOICE_SETTINGS_URL)
-    }
-
-    private func addVoiceOption(_ title: String, identifier: String?, to menu: NSMenu) {
-        let option = menu.addItem(withTitle: title, action: #selector(changeVoice), keyEquivalent: "")
-        option.target = self
-        option.representedObject = identifier
-        option.state = identifier == speaker.voiceIdentifier ? .on : .off
-    }
-
-    private func voiceTitle(_ voice: AVSpeechSynthesisVoice) -> String {
-        let region = Locale(identifier: voice.language).region.flatMap { Locale.current.localizedString(forRegionCode: $0.identifier) }
-        return region.map { "\(voice.name) — \($0)" } ?? voice.name
     }
 
     @objc private func changeVoice(_ sender: NSMenuItem) {
-        let identifier = sender.representedObject as? String
-        speaker.voiceIdentifier = identifier
-        UserDefaults.standard.set(identifier, forKey: VOICE_KEY)
+        speaker.voice = sender.title
+        UserDefaults.standard.set(sender.title, forKey: VOICE_KEY)
         speaker.speak(currentWord.isEmpty ? VOICE_SAMPLE : currentWord)
     }
 
