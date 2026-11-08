@@ -4,7 +4,7 @@ A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** 
 
 The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
 
-- Click 🔊 in the pop-up to hear the word again.
+- Click anywhere on the pop-up to hear the word again.
 - Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Long phrases and translations wrap, so they show in full. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
 - Pick the voice speed in the menu bar icon → **Speed**: 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2, as on YouTube. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.

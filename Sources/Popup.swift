@@ -1,7 +1,19 @@
 import Cocoa
 
 final class PopupPanel: NSPanel {
+    var onClick: (() -> Void)?
+
     override var canBecomeKey: Bool { false }
+
+    // A click anywhere on the card says the word again, so the speaker button inside doesn't also get it.
+    // VoiceOver still presses that button.
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown: break
+        case .leftMouseUp: onClick?()
+        default: super.sendEvent(event)
+        }
+    }
 }
 
 final class Popup {
@@ -32,6 +44,9 @@ final class Popup {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.onClick = { [weak self] in
+            if self?.shown?.word.isEmpty == false { self?.onReplay?() }
+        }
 
         stack.orientation = .vertical
         stack.alignment = .leading
