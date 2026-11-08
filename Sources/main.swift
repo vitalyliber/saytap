@@ -2,6 +2,7 @@ import AVFoundation
 import Carbon.HIToolbox
 import Cocoa
 import CoreServices
+import PhononTTS
 import Translation
 
 // MARK: - Settings
@@ -26,17 +27,16 @@ let HIDDEN_ENTRY_CLASSES: Set<String> = ["gp", "tgr"]
 
 struct SpeechSpeed {
     let title: String
-    let phononDelta: Double
-    let playbackRate: Float
+    let rate: Float
 }
 
-// Phonon's duration_delta only stretches speech by about ±10%, so the outer presets also change the playback rate.
+// Applied when playing, with the pitch kept: the Core ML model has no speed condition.
 let SPEECH_SPEEDS = [
-    SpeechSpeed(title: "Very slow", phononDelta: 0.3, playbackRate: 0.75),
-    SpeechSpeed(title: "Slow", phononDelta: 0.3, playbackRate: 1),
-    SpeechSpeed(title: "Normal", phononDelta: 0, playbackRate: 1),
-    SpeechSpeed(title: "Fast", phononDelta: -0.3, playbackRate: 1),
-    SpeechSpeed(title: "Very fast", phononDelta: -0.3, playbackRate: 1.25),
+    SpeechSpeed(title: "Very slow", rate: 0.7),
+    SpeechSpeed(title: "Slow", rate: 0.85),
+    SpeechSpeed(title: "Normal", rate: 1),
+    SpeechSpeed(title: "Fast", rate: 1.15),
+    SpeechSpeed(title: "Very fast", rate: 1.35),
 ]
 let DEFAULT_SPEED_INDEX = 2
 let SPEED_KEY = "speed"
@@ -45,8 +45,11 @@ let VOICE_KEY = "voice"
 let VOICE_SAMPLE = "Hello, this is how I sound."
 
 let PHONON_VOICES = ["Harper", "Hadley", "Everly", "Maeve", "Edwin", "Spencer"]
-let PHONON_EXECUTABLES = ["/opt/homebrew/bin/ptts", "/usr/local/bin/ptts"]
-let PHONON_INSTALL_HINT = "brew install gradium-ai/tap/ptts"
+// The model folder build.sh puts in the app's Resources, and its copy in Application Support,
+// where Core ML compiles it on the first launch.
+let MODELS_FOLDER = "Models"
+// One sample to schedule after an utterance: its playback marks the end of the speech.
+let END_MARKER_SAMPLES = 1
 
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
@@ -70,7 +73,7 @@ let POPUP_CURSOR_OFFSET: CGFloat = 16
 let MAX_DICTIONARY_TERMS = 6
 let ESCAPE_KEY_CODE = UInt16(kVK_Escape)
 
-let HISTORY_FOLDER = "Word Popup"
+let SUPPORT_FOLDER = "Word Popup"
 let HISTORY_FILE = "history.json"
 let HISTORY_WINDOW_SIZE = NSSize(width: 720, height: 560)
 let HISTORY_ROW_HEIGHT: CGFloat = 40
@@ -366,7 +369,7 @@ final class History {
 
     init() {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(HISTORY_FOLDER)
+            .appendingPathComponent(SUPPORT_FOLDER)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         file = folder.appendingPathComponent(HISTORY_FILE)
         encoder.dateEncodingStrategy = .iso8601
@@ -555,92 +558,107 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 
 // MARK: - Speech
 
-// Speaks with Phonon by running the ptts command for each phrase. It first runs offline: asking Hugging Face
-// for updates takes most of a second. Only a voice that isn't downloaded yet needs the online run.
-final class Speaker {
+// Speaks with Phonon on the Neural Engine. The model ships in the app's Resources and is copied to Application Support
+// on the first launch, where Core ML compiles it (several seconds, once); later launches load it in about half a second.
+// Audio plays as it's generated, through a time-pitch unit that sets the speed without changing the voice.
+// Its state is only touched on the main thread: chunks from the generating task arrive through the main queue.
+final class Speaker: @unchecked Sendable {
     var voice = PHONON_VOICES[0]
     var speed = SPEECH_SPEEDS[DEFAULT_SPEED_INDEX]
-    private var process: Process?
-    private var player: AVAudioPlayer?
+    private var phonon: Task<Phonon, Error>?
+    private var generation: Task<Void, Never>?
+    private let engine = AVAudioEngine()
+    private let node = AVAudioPlayerNode()
+    private let timePitch = AVAudioUnitTimePitch()
+    private let format = AVAudioFormat(standardFormatWithSampleRate: Phonon.sampleRate, channels: 1)!
     private var request = 0
-    private var cached: (key: String, file: URL)?
+    private var samples: [Float] = []
+    // Kept without the speed, which only changes playback.
+    private var cached: (key: String, samples: [Float])?
 
-    static var executable: URL? {
-        PHONON_EXECUTABLES.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+    init() {
+        engine.attach(node)
+        engine.attach(timePitch)
+        engine.connect(node, to: timePitch, format: format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
     }
 
-    // Beeps when ptts is missing or fails.
+    // Starts loading the model with the current voice, so the first word doesn't wait for it.
+    func load() {
+        let voice = voice
+        phonon = Task.detached {
+            guard let bundled = Bundle.main.url(forResource: MODELS_FOLDER, withExtension: nil) else {
+                throw PhononError(description: "The app has no \(MODELS_FOLDER) folder: build it with build.sh.")
+            }
+            let installed = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(SUPPORT_FOLDER).appendingPathComponent(MODELS_FOLDER)
+            let phonon = try await Phonon.load(models: PhononModels.install(bundled: bundled, to: installed), language: .english)
+            try await phonon.setVoice(voice)
+            return phonon
+        }
+    }
+
+    // Beeps when the model can't load or speak.
     func speak(_ text: String) {
         stop()
         let current = request
-        let (voice, delta, playbackRate) = (voice, speed.phononDelta, speed.playbackRate)
-        let key = "\(voice)|\(delta)|\(text)"
+        let key = "\(voice)|\(text)"
         if let cached, cached.key == key {
-            play(cached.file, rate: playbackRate)
+            enqueue(cached.samples, for: current)
+            finish(key: key, for: current)
             return
         }
-        guard let executable = Speaker.executable else {
-            NSSound.beep()
-            return
-        }
+        guard let phonon else { return NSSound.beep() }
 
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("word-popup-\(current).wav")
-        let finish = { [weak self] (succeeded: Bool) in
-            guard let self, self.request == current else { return }
-            if succeeded {
-                self.cached.map { try? FileManager.default.removeItem(at: $0.file) }
-                self.cached = (key, file)
-                self.play(file, rate: playbackRate)
-            } else {
-                NSSound.beep()
-            }
-        }
-        generate(executable, text: text, voice: voice, delta: delta, to: file, offline: true) { [weak self] succeeded in
-            guard let self, self.request == current else { return }
-            if succeeded {
-                finish(true)
-            } else {
-                self.generate(executable, text: text, voice: voice, delta: delta, to: file, offline: false, completion: finish)
+        let voice = voice
+        generation = Task.detached { [weak self] in
+            do {
+                let phonon = try await phonon.value
+                if phonon.voice != voice { try await phonon.setVoice(voice) }
+                try await phonon.speak(text) { chunk in
+                    DispatchQueue.main.async { self?.enqueue(chunk, for: current) }
+                }
+                DispatchQueue.main.async { self?.finish(key: key, for: current) }
+            } catch {
+                NSLog("Phonon failed: %@", String(describing: error))
+                DispatchQueue.main.async { if self?.request == current { NSSound.beep() } }
             }
         }
     }
 
-    // Also invalidates the running request, so a terminated run is ignored.
+    // Also invalidates the running request, so chunks still on their way are dropped.
     func stop() {
         request += 1
-        process?.terminate()
-        process = nil
-        player?.stop()
+        generation?.cancel()
+        generation = nil
+        samples = []
+        node.stop()
     }
 
-    private func generate(_ executable: URL, text: String, voice: String, delta: Double, to file: URL, offline: Bool,
-                          completion: @escaping (Bool) -> Void) {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["--lang", SOURCE_LANGUAGE, "--voice", voice, "--condition", "duration_delta=\(delta)",
-                             "-o", file.path, "--", text]
-        var environment = ProcessInfo.processInfo.environment
-        if offline { environment["HF_HUB_OFFLINE"] = "1" }
-        process.environment = environment
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { finished in
-            let succeeded = finished.terminationReason == .exit && finished.terminationStatus == 0
-            DispatchQueue.main.async { completion(succeeded) }
-        }
-        do {
-            try process.run()
-            self.process = process
-        } catch {
-            completion(false)
+    private func enqueue(_ chunk: [Float], for current: Int) {
+        guard request == current, let buffer = buffer(chunk) else { return }
+        samples += chunk
+        timePitch.rate = speed.rate
+        if !engine.isRunning { try? engine.start() }
+        node.scheduleBuffer(buffer)
+        if !node.isPlaying { node.play() }
+    }
+
+    // Caches the finished utterance and pauses the engine once it has played, so the idle app doesn't keep audio running.
+    private func finish(key: String, for current: Int) {
+        guard request == current, let marker = buffer([Float](repeating: 0, count: END_MARKER_SAMPLES)) else { return }
+        cached = (key, samples)
+        node.scheduleBuffer(marker, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            DispatchQueue.main.async { if self?.request == current { self?.engine.pause() } }
         }
     }
 
-    private func play(_ file: URL, rate: Float) {
-        player = try? AVAudioPlayer(contentsOf: file)
-        player?.enableRate = true
-        player?.rate = rate
-        player?.play()
+    private func buffer(_ samples: [Float]) -> AVAudioPCMBuffer? {
+        guard !samples.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        return buffer
     }
 }
 
@@ -861,7 +879,7 @@ final class DoubleTap {
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let speaker = Speaker()
     private let popup = Popup()
     private let history = History()
@@ -883,6 +901,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let savedSpeed = UserDefaults.standard.string(forKey: SPEED_KEY)
         if let speed = SPEECH_SPEEDS.first(where: { $0.title == savedSpeed }) { speaker.speed = speed }
         if let voice = UserDefaults.standard.string(forKey: VOICE_KEY), PHONON_VOICES.contains(voice) { speaker.voice = voice }
+        speaker.load()
         targetLanguage = UserDefaults.standard.string(forKey: TARGET_LANGUAGE_KEY) ?? AppDelegate.preferredTargetLanguage()
         setUpMenu()
         setUpShortcuts()
@@ -911,14 +930,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentWord = word
         speaker.speak(word)
         popup.show(word: word, translation: nil, status: "Translating…", at: NSEvent.mouseLocation)
-        let speechHint = Speaker.executable == nil ? "To hear words: \(PHONON_INSTALL_HINT)" : nil
 
         Translator.translate(word, to: targetLanguage) { [weak self] result in
             guard let self, self.currentWord == word else { return }
             switch result {
             case .success(let translation):
                 self.history.record(word, translation: translation)
-                self.popup.show(word: word, translation: translation, status: speechHint)
+                self.popup.show(word: word, translation: translation, status: nil)
             case .failure(let failure):
                 self.popup.show(word: word, translation: nil, status: failure.message)
             }
@@ -1036,29 +1054,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func voiceMenuItem() -> NSMenuItem {
         let submenu = NSMenu()
-        submenu.delegate = self
+        for voice in PHONON_VOICES {
+            let option = submenu.addItem(withTitle: voice, action: #selector(changeVoice), keyEquivalent: "")
+            option.target = self
+            option.state = voice == speaker.voice ? .on : .off
+        }
         let item = NSMenuItem(title: "Voice", action: nil, keyEquivalent: "")
         item.submenu = submenu
         return item
     }
 
-    // Rebuilt on every open, so installing ptts while the app runs shows the voices.
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        guard Speaker.executable != nil else {
-            menu.addItem(withTitle: "Speech needs: \(PHONON_INSTALL_HINT)", action: nil, keyEquivalent: "")
-            return
-        }
-        for voice in PHONON_VOICES {
-            let option = menu.addItem(withTitle: voice, action: #selector(changeVoice), keyEquivalent: "")
-            option.target = self
-            option.state = voice == speaker.voice ? .on : .off
-        }
-    }
-
     @objc private func changeVoice(_ sender: NSMenuItem) {
         speaker.voice = sender.title
         UserDefaults.standard.set(sender.title, forKey: VOICE_KEY)
+        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
         speaker.speak(currentWord.isEmpty ? VOICE_SAMPLE : currentWord)
     }
 

@@ -12,7 +12,7 @@ The double tap only counts when ⌥ is pressed on its own: two quick taps, each 
 - Words and phrasal verbs come from the bilingual Oxford dictionary that ships with macOS: translations grouped by part of speech, with transcription. It works offline and answers instantly. If the dictionary for your language isn't downloaded yet, open Dictionary.app → Settings and tick it.
 - Phrases and sentences the dictionary doesn't have go to Google Translate's public endpoint, so that text is sent to Google. When Google fails, limits requests or doesn't answer within a second, the app translates on the Mac with Apple's Translation, if the language is downloaded in System Settings → General → Language & Region → Translation Languages.
 - Pick the voice in the menu bar icon → **Voice**: Harper, Hadley, Everly, Maeve, Edwin or Spencer.
-- Speech comes from [Phonon](https://gradium.ai/phonon), Gradium's open text-to-speech model, through its `ptts` command (step 4 of Install). It runs on the Mac, so the text isn't sent anywhere. A word takes about 0.2 s before it plays. Without `ptts` the pop-up shows the command to install it; if `ptts` fails, the app beeps.
+- Speech comes from [Phonon](https://gradium.ai/phonon), Gradium's open text-to-speech model, built into the app with its Swift package and Core ML model. It runs on the Mac's Neural Engine, so the text isn't sent anywhere, and a word starts playing in about 20 ms. Switching the voice adds about half a second to the next word. If speech fails, the app beeps.
 
 ## Install
 
@@ -24,9 +24,9 @@ Run the steps in order. If the Accessibility permission is granted before the ce
 
 ### 1. Requirements
 
-- macOS 26 or later, on Apple silicon or Intel. An Intel Mac needs a CPU with AVX2, which Phonon requires.
-- [Homebrew](https://brew.sh), to install Phonon.
-- The Swift compiler. Check with `swiftc --version`. If it's missing, run `xcode-select --install`. **👤** The person confirms the installer dialog.
+- macOS 26 or later, on Apple silicon. Intel Macs aren't supported: Phonon's Core ML model runs on the Neural Engine.
+- Swift 6 or later, with its package manager. Check with `swift --version`. If it's missing, run `xcode-select --install`. **👤** The person confirms the installer dialog.
+- About 650 MB of disk space: the app with its model (170 MB), the model copy Core ML compiles on first launch (310 MB), and the build's downloads.
 
 Run the remaining commands from this folder (the one with `build.sh`).
 
@@ -69,31 +69,19 @@ Check it. The output should list "Word Popup Signing" with Code Signing:
 security dump-trust-settings -d | grep -A3 "Word Popup Signing"
 ```
 
-### 4. Install Phonon
-
-Install Gradium's `ptts` command. The app finds it in `/opt/homebrew/bin` or `/usr/local/bin`:
-
-```bash
-brew install gradium-ai/tap/ptts
-```
-
-Download the model (about 100 MB, cached in `~/.cache/huggingface`) and the menu's voices once, so the first look-up doesn't wait for them:
-
-```bash
-for voice in Harper Hadley Everly Maeve Edwin Spencer; do ptts --lang en --voice "$voice" -o /tmp/phonon-check.wav -- "Hello"; done; rm /tmp/phonon-check.wav
-```
-
-### 5. Build and install
+### 4. Build and install
 
 ```bash
 ./build.sh
 ```
 
-This compiles `Sources/main.swift`, installs `~/Applications/Word Popup.app` and starts the app. A speech bubble icon appears in the menu bar.
+This builds the app with Swift Package Manager, installs `~/Applications/Word Popup.app` and starts it. A speech bubble icon appears in the menu bar. The first build also fetches Phonon's Swift package (about 50 MB) and its Core ML model (about 140 MB, kept in `build/` for later builds).
+
+On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done. Later launches load it in about half a second.
 
 **👤** On the first build macOS asks: *"codesign wants to sign using key 'Word Popup Signing' in your keychain."* The person enters their login password and clicks **Always Allow**. Until then the build waits.
 
-### 6. Allow Accessibility
+### 5. Allow Accessibility
 
 **👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. The person clicks **Open System Settings** and switches **Word Popup** on in Privacy & Security → Accessibility.
 
@@ -103,13 +91,13 @@ Then restart the app and check that it has the permission. The log must say `Acc
 pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 2; cat /tmp/word-popup.log
 ```
 
-### 7. Optional: offline translation
+### 6. Optional: offline translation
 
 **👤** For the best word translations, open Dictionary.app → Settings and tick the dictionary between English and the person's language, for example "Oxford Russian Dictionary". macOS downloads it.
 
 **👤** To translate phrases when Google Translate is unavailable, add the language in System Settings → General → Language & Region → Translation Languages.
 
-### 8. Try it
+### 7. Try it
 
 Select a word in any app, for example in Notes, and tap ⌥ twice. You should hear the word and see the pop-up.
 
@@ -125,9 +113,15 @@ To start the app at login, add `~/Applications/Word Popup.app` in System Setting
 
   If that doesn't help, check that step 3 was done.
 
-- **`./build.sh` stops at `codesign` and waits.** The keychain dialog from step 5 is open, possibly behind other windows.
+- **`./build.sh` stops at `codesign` and waits.** The keychain dialog from step 4 is open, possibly behind other windows.
 - **A double tap of ⌥ only beeps, with no pop-up.** The app found no selected text. Some apps don't expose the selection; the app then copies it with ⌘C, which only works if the app supports copying.
-- **The pop-up appears, but there's a beep instead of the word.** `ptts` failed. Run it by hand to see the error: `ptts --lang en --voice Harper -o /tmp/check.wav -- "hello"`. A voice that isn't downloaded yet needs an internet connection the first time.
+- **The pop-up appears, but there's a beep instead of the word.** Phonon failed to load or speak. Start the app with its log, look up a word, and read the line starting with `Phonon failed`:
+
+  ```bash
+  pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 10; cat /tmp/word-popup.log
+  ```
+
+  If the compiled model is broken, delete `~/Library/Application Support/Word Popup/Models` and restart the app: it copies and compiles the model again.
 
 ## Uninstall
 
@@ -136,6 +130,11 @@ pkill -x WordPopup; rm -rf ~/Applications/Word\ Popup.app
 tccutil reset Accessibility local.vitaly.word-popup
 defaults delete local.vitaly.word-popup
 rm -rf ~/Library/Application\ Support/Word\ Popup
+```
+
+Earlier versions spoke through Gradium's `ptts` command. If it's still installed, remove it and its model cache:
+
+```bash
 brew uninstall ptts
 rm -rf ~/.cache/huggingface/hub/models--gradium--phonon-31m-en ~/.cache/huggingface/hub/models--gradium--phonon-voices
 ```
@@ -146,4 +145,6 @@ rm -rf ~/.cache/huggingface/hub/models--gradium--phonon-31m-en ~/.cache/huggingf
 
 `./build.sh` rebuilds, reinstalls and restarts the app. The certificate keeps the Accessibility permission across rebuilds.
 
-Settings are constants at the top of `Sources/main.swift`: voices (`PHONON_VOICES`; `ptts --list-voices` lists them all), hotkey, double-tap modifier and timing, speed presets, pop-up lifetime and size. Rebuild after you change them.
+Phonon's version is pinned twice: the Swift package in `Package.swift` and the Core ML model in `build.sh` (`PHONON_VERSION`, with the archive's SHA-256). Update them together.
+
+Settings are constants at the top of `Sources/main.swift`: voices (`PHONON_VOICES`; the model's 37 voices are in `build/Models-*/voices`), hotkey, double-tap modifier and timing, speed presets, pop-up lifetime and size. Rebuild after you change them.

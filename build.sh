@@ -5,23 +5,42 @@ cd "${0:A:h}"
 
 APP="$HOME/Applications/Word Popup.app"
 CERTIFICATE="Word Popup Signing"
-MINIMUM_MACOS="26.0"
+# The Phonon release whose Core ML model the app ships; Package.swift pins the same version of the package.
+PHONON_VERSION="0.6.0"
+MODEL_URL="https://github.com/gradium-ai/xn-ptts/releases/download/v$PHONON_VERSION/phonon-31m-en-coreml.zip"
+MODEL_SHA256="2869326ab074f55ed5b644e68b1befef69dc51545b73296d49f5b4dab14c4218"
+MODELS="build/Models-$PHONON_VERSION"
+
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "Word Popup needs a Mac with Apple silicon: Phonon runs on its Neural Engine." >&2
+  exit 1
+fi
 
 if ! security find-certificate -c "$CERTIFICATE" >/dev/null 2>&1; then
   echo "No \"$CERTIFICATE\" certificate in the keychain. Create it first: see Install in README.md." >&2
   exit 1
 fi
 
-mkdir -p build
-swiftc -O -swift-version 5 -target "$(uname -m)-apple-macosx$MINIMUM_MACOS" \
-  -framework Cocoa -framework Carbon -framework AVFoundation \
-  -o build/WordPopup Sources/main.swift
+if [[ ! -d "$MODELS" ]]; then
+  echo "Downloading the Phonon model (about 140 MB)…"
+  mkdir -p build
+  curl -fL --progress-bar -o build/model.zip "$MODEL_URL"
+  echo "$MODEL_SHA256  build/model.zip" | shasum -a 256 -c --quiet
+  rm -rf build/model
+  unzip -q build/model.zip -d build/model
+  mv build/model/phonon-31m-en "$MODELS"
+  rm -rf build/model build/model.zip
+fi
+
+swift build -c release --arch arm64
+BINARY="$(swift build -c release --arch arm64 --show-bin-path)/WordPopup"
 
 pkill -x WordPopup || true
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
-cp build/WordPopup "$APP/Contents/MacOS/WordPopup"
+cp "$BINARY" "$APP/Contents/MacOS/WordPopup"
+cp -R "$MODELS" "$APP/Contents/Resources/Models"
 # A real certificate keeps the Accessibility permission across rebuilds; an ad-hoc signature
 # is identified by its hash, so macOS would forget the permission every time.
 codesign --force --sign "$CERTIFICATE" "$APP"
