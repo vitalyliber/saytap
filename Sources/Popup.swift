@@ -199,11 +199,13 @@ final class Popup {
         speakerIcon = replay
         animateSpeaker()
 
-        let title = label(word, size: style.wordSize, weight: .semibold)
-        title.lineBreakMode = .byTruncatingTail
-        title.maximumNumberOfLines = 2
+        // A phrase wraps in full, in a smaller size than a word so a few lines don't fill the screen.
+        let size = word.count > POPUP_PHRASE_LENGTH ? POPUP_PHRASE_SIZE : style.wordSize
+        let title = label(word, size: size, weight: .semibold)
         let row = NSStackView(views: [replay, title])
-        row.spacing = 6
+        row.spacing = POPUP_HEADER_SPACING
+        row.alignment = .firstBaseline
+        title.preferredMaxLayoutWidth = POPUP_WIDTH - 2 * POPUP_PADDING - replay.fittingSize.width - POPUP_HEADER_SPACING
         guard let phonetic, !phonetic.isEmpty else { return row }
 
         let column = NSStackView(views: [row, label(style.phonetic.prefix + phonetic + style.phonetic.suffix, size: 13, color: style.secondary)])
