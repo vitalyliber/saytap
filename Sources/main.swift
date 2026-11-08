@@ -23,6 +23,12 @@ let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
 let HOTKEY_LABEL = "⌃⌥T"
 let HOTKEY_SIGNATURE: OSType = 0x5750_4F50 // "WPOP"
 
+let DOUBLE_TAP_MODIFIER = NSEvent.ModifierFlags.option
+let DOUBLE_TAP_LABEL = "⌥⌥"
+let TRACKED_MODIFIERS: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
+let TAP_MAX_DURATION: TimeInterval = 0.3
+let DOUBLE_TAP_INTERVAL: TimeInterval = 0.4
+
 let MAX_SELECTION_LENGTH = 500
 let COPY_TIMEOUT: TimeInterval = 0.4
 let COPY_POLL_INTERVAL: TimeInterval = 0.02
@@ -345,6 +351,55 @@ final class HotKey {
     }
 }
 
+// MARK: - Double-tap trigger
+
+// Fires when the modifier is tapped twice on its own; any key, click or other modifier in between cancels it.
+final class DoubleTap {
+    private let modifier: NSEvent.ModifierFlags
+    private let action: () -> Void
+    private var monitors: [Any] = []
+    private var pressedAt: Date?
+    private var lastTapAt: Date?
+
+    init(modifier: NSEvent.ModifierFlags, action: @escaping () -> Void) {
+        self.modifier = modifier
+        self.action = action
+        monitors = [
+            NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] in self?.handle($0) },
+            NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                self?.reset()
+            },
+        ].compactMap { $0 }
+    }
+
+    private func handle(_ event: NSEvent) {
+        let flags = event.modifierFlags.intersection(TRACKED_MODIFIERS)
+        if flags == modifier {
+            pressedAt = Date()
+        } else if flags.isEmpty, let pressedAt, Date().timeIntervalSince(pressedAt) < TAP_MAX_DURATION {
+            registerTap()
+        } else {
+            reset()
+        }
+    }
+
+    private func registerTap() {
+        pressedAt = nil
+        let now = Date()
+        if let lastTapAt, now.timeIntervalSince(lastTapAt) < DOUBLE_TAP_INTERVAL {
+            self.lastTapAt = nil
+            action()
+        } else {
+            lastTapAt = now
+        }
+    }
+
+    private func reset() {
+        pressedAt = nil
+        lastTapAt = nil
+    }
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -352,11 +407,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let popup = Popup()
     private var statusItem: NSStatusItem?
     private var hotKey: HotKey?
+    private var doubleTap: DoubleTap?
     private var currentWord = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         popup.onReplay = { [weak self] in self.map { $0.speaker.speak($0.currentWord) } }
         hotKey = HotKey(keyCode: HOTKEY_KEY_CODE, modifiers: HOTKEY_MODIFIERS) { [weak self] in self?.lookUpSelection() }
+        doubleTap = DoubleTap(modifier: DOUBLE_TAP_MODIFIER) { [weak self] in self?.lookUpSelection() }
         UserDefaults.standard.register(defaults: [SPEECH_RATE_KEY: AVSpeechUtteranceDefaultSpeechRate])
         speaker.rate = UserDefaults.standard.float(forKey: SPEECH_RATE_KEY)
         setUpMenu()
@@ -402,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Word Popup")
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Speak & translate selection (\(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
+        menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
         menu.addItem(speedMenuItem())
         menu.addItem(withTitle: "Accessibility settings…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())

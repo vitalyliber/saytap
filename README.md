@@ -1,6 +1,8 @@
 # Word Popup
 
-A menu bar app for macOS. Select a word in any app and press **⌃⌥T**: the app reads it aloud and shows the Russian translation in a floating pop-up next to the cursor.
+A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** (or press **⌃⌥T**): the app reads it aloud and shows the Russian translation in a floating pop-up next to the cursor.
+
+The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
 
 - Click 🔊 in the pop-up to hear the word again.
 - Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
@@ -34,6 +36,6 @@ tccutil reset Accessibility local.vitaly.word-popup
 
 ## Settings
 
-Settings are constants at the top of `Sources/main.swift`: target language, hotkey, speed presets, pop-up lifetime and size. Rebuild after you change them.
+Settings are constants at the top of `Sources/main.swift`: target language, hotkey, double-tap modifier and timing, speed presets, pop-up lifetime and size. Rebuild after you change them.
 
 To start the app at login, add it in System Settings → General → Login Items.
