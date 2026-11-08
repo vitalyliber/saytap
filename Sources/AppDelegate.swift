@@ -252,7 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(loginItem)
         menu.addItem(accessibilityItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Saytap Website", action: #selector(openWebsite), keyEquivalent: "")
+        let website = menu.addItem(withTitle: "Saytap Website", action: #selector(openWebsite), keyEquivalent: "")
+        website.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         menu.addItem(withTitle: "Quit Saytap", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
         item.menu = menu
