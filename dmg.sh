@@ -57,8 +57,10 @@ done
 
 # Finder saves the window's look in the image's .DS_Store. It keeps the window's size and bars from the first
 # opening, but drops view options set then, so those go in on a second opening a few seconds later.
+# Other Finder windows go first: with tabs preferred, the disk would open as a tab of one of them and keep its size.
 osascript <<EOF
 tell application "Finder"
+  close every window
   tell disk "$VOLUME"
     open
     set current view of container window to icon view
@@ -95,6 +97,21 @@ i = d.find(b'icvpblob')
 sys.exit(i < 0 or b'bwspblob' not in d or plistlib.loads(d[i + 12:i + 12 + int.from_bytes(d[i + 8:i + 12], 'big')]).get('backgroundType') != BACKGROUND_PICTURE)" && break
   sleep "$FINDER_WAIT_STEP"
 done
+
+python3 - "$MOUNT/.DS_Store" "$WINDOW_WIDTH" "$WINDOW_HEIGHT" <<'PYEOF' || { hdiutil detach -quiet "$MOUNT"; exit 1; }
+import plistlib, re, sys
+path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+d = open(path, 'rb').read()
+i = d.find(b'bwspblob')
+if i < 0:
+    sys.exit("Finder didn't save the window. Run ./dmg.sh again and leave Finder alone meanwhile.")
+window = plistlib.loads(d[i + 12:i + 12 + int.from_bytes(d[i + 8:i + 12], 'big')])
+size = [int(n) for n in re.findall(r'-?\d+', window['WindowBounds'])[2:]]
+tabs = ' with a tab bar' if window.get('ShowTabView') else ''
+if size != [width, height] or tabs:
+    sys.exit(f"Finder saved the window at {size[0]}x{size[1]}{tabs} instead of {width}x{height}. "
+             "Run ./dmg.sh again and leave Finder alone meanwhile.")
+PYEOF
 
 # The disk icon goes on last: hdiutil leaves it out of -srcfolder, and Finder drops it while it lays out the window.
 cp "$SOURCE_APP/Contents/Resources/AppIcon.icns" "$MOUNT/.VolumeIcon.icns"

@@ -53,7 +53,8 @@ DEVELOPER_ID="Developer ID Application: Jane Appleseed (ABCDE12345)" NOTARY_PROF
 ```
 
 - The first time, macOS asks whether Terminal may control Finder: click **Allow**. `dmg.sh` lays out the installer window through Finder.
-- Finder opens and closes the installer window. Leave Finder alone for about 15 seconds.
+- The script closes Finder's windows, then opens and closes the installer window. Leave Finder alone for about 15 seconds.
+- If it stops with "Finder saved the window at … instead of 640x400", run it again.
 - Apple's notarization takes a few minutes. The script ends with "The staple and validate action worked!" and "Made build/Saytap.dmg".
 
 ## 6. Check it
