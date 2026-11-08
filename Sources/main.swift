@@ -17,6 +17,9 @@ let SPEECH_SPEEDS: [(title: String, rate: Float)] = [
 ]
 let SPEECH_RATE_KEY = "speechRate"
 let SPEED_SAMPLE = "This is how fast I speak."
+let VOICE_KEY = "voiceIdentifier"
+let AUTOMATIC_VOICE_TITLE = "Automatic (best installed)"
+let VOICE_SAMPLE = "Hello, this is how I sound."
 
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
@@ -163,8 +166,8 @@ enum Translator {
 
 final class Speaker {
     private let synthesizer = AVSpeechSynthesizer()
-    private lazy var voice = bestEnglishVoice()
     var rate = AVSpeechUtteranceDefaultSpeechRate
+    var voiceIdentifier: String?
 
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
@@ -174,13 +177,20 @@ final class Speaker {
         synthesizer.speak(utterance)
     }
 
+    // The chosen voice, or the best installed one when none is chosen or it was removed.
+    private var voice: AVSpeechSynthesisVoice? {
+        voiceIdentifier.flatMap(AVSpeechSynthesisVoice.init(identifier:)) ?? Speaker.englishVoices().first
+    }
+
     // Premium and Enhanced voices first; among equals, the preferred region.
-    private func bestEnglishVoice() -> AVSpeechSynthesisVoice? {
+    static func englishVoices() -> [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix(SPEECH_LANGUAGE_PREFIX) && !$0.voiceTraits.contains(.isNoveltyVoice) }
-            .max { lhs, rhs in
-                if lhs.quality != rhs.quality { return lhs.quality.rawValue < rhs.quality.rawValue }
-                return lhs.language != PREFERRED_SPEECH_REGION && rhs.language == PREFERRED_SPEECH_REGION
+            .sorted { lhs, rhs in
+                if lhs.quality != rhs.quality { return lhs.quality.rawValue > rhs.quality.rawValue }
+                let lhsPreferred = lhs.language == PREFERRED_SPEECH_REGION
+                if lhsPreferred != (rhs.language == PREFERRED_SPEECH_REGION) { return lhsPreferred }
+                return lhs.name < rhs.name
             }
     }
 }
@@ -402,7 +412,7 @@ final class DoubleTap {
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let speaker = Speaker()
     private let popup = Popup()
     private var statusItem: NSStatusItem?
@@ -416,6 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         doubleTap = DoubleTap(modifier: DOUBLE_TAP_MODIFIER) { [weak self] in self?.lookUpSelection() }
         UserDefaults.standard.register(defaults: [SPEECH_RATE_KEY: AVSpeechUtteranceDefaultSpeechRate])
         speaker.rate = UserDefaults.standard.float(forKey: SPEECH_RATE_KEY)
+        speaker.voiceIdentifier = UserDefaults.standard.string(forKey: VOICE_KEY)
         setUpMenu()
 
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -461,6 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
         menu.addItem(speedMenuItem())
+        menu.addItem(voiceMenuItem())
         menu.addItem(withTitle: "Accessibility settings…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Word Popup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -488,6 +500,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(rate, forKey: SPEECH_RATE_KEY)
         sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
         speaker.speak(currentWord.isEmpty ? SPEED_SAMPLE : currentWord)
+    }
+
+    private func voiceMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        submenu.delegate = self
+        let item = NSMenuItem(title: "Voice", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    // Rebuilt on every open, so voices downloaded while the app runs show up.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        addVoiceOption(AUTOMATIC_VOICE_TITLE, identifier: nil, to: menu)
+        menu.addItem(.separator())
+        for voice in Speaker.englishVoices() where voice.quality != .default {
+            addVoiceOption(voiceTitle(voice), identifier: voice.identifier, to: menu)
+        }
+    }
+
+    private func addVoiceOption(_ title: String, identifier: String?, to menu: NSMenu) {
+        let option = menu.addItem(withTitle: title, action: #selector(changeVoice), keyEquivalent: "")
+        option.target = self
+        option.representedObject = identifier
+        option.state = identifier == speaker.voiceIdentifier ? .on : .off
+    }
+
+    private func voiceTitle(_ voice: AVSpeechSynthesisVoice) -> String {
+        let region = Locale(identifier: voice.language).region.flatMap { Locale.current.localizedString(forRegionCode: $0.identifier) }
+        return region.map { "\(voice.name) — \($0)" } ?? voice.name
+    }
+
+    @objc private func changeVoice(_ sender: NSMenuItem) {
+        let identifier = sender.representedObject as? String
+        speaker.voiceIdentifier = identifier
+        UserDefaults.standard.set(identifier, forKey: VOICE_KEY)
+        speaker.speak(currentWord.isEmpty ? VOICE_SAMPLE : currentWord)
     }
 
     @objc private func openAccessibilitySettings() {

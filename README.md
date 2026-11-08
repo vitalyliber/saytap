@@ -8,7 +8,7 @@ The double tap only counts when ⌥ is pressed on its own: two quick taps, each 
 - Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
 - Translations come from Google Translate's public endpoint, so the selected text is sent to Google.
-- Speech uses the best installed English voice: Premium or Enhanced first, then en-US. Install more voices in System Settings → Accessibility → Spoken Content → System voice → Manage Voices.
+- Pick the voice in the menu bar icon → **Voice**: it lists the installed Premium and Enhanced English voices. **Automatic** uses the best installed one: Premium or Enhanced first, then en-US. Install more voices in System Settings → Accessibility → Spoken Content → System voice → Manage Voices; they show up in the menu without restarting the app.
 
 ## Build
 
