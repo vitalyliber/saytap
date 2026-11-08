@@ -98,19 +98,46 @@ sys.exit(i < 0 or b'bwspblob' not in d or plistlib.loads(d[i + 12:i + 12 + int.f
   sleep "$FINDER_WAIT_STEP"
 done
 
-python3 - "$MOUNT/.DS_Store" "$WINDOW_WIDTH" "$WINDOW_HEIGHT" <<'PYEOF' || { hdiutil detach -quiet "$MOUNT"; exit 1; }
+# macOS 27's Finder saves every window with its tab bar shown. The window record is a binary plist, where a boolean
+# is a single byte, so the script switches the tab bar off in place without changing the record's length.
+python3 -I - "$MOUNT/.DS_Store" "$WINDOW_WIDTH" "$WINDOW_HEIGHT" <<'PYEOF' || { hdiutil detach -quiet "$MOUNT"; exit 1; }
 import plistlib, re, sys
 path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-d = open(path, 'rb').read()
+TRUE, FALSE = 0x09, 0x08
+TRAILER = 32
+d = bytearray(open(path, 'rb').read())
 i = d.find(b'bwspblob')
 if i < 0:
     sys.exit("Finder didn't save the window. Run ./dmg.sh again and leave Finder alone meanwhile.")
-window = plistlib.loads(d[i + 12:i + 12 + int.from_bytes(d[i + 8:i + 12], 'big')])
+start = i + 12
+end = start + int.from_bytes(d[i + 8:i + 12], 'big')
+window = plistlib.loads(bytes(d[start:end]))
 size = [int(n) for n in re.findall(r'-?\d+', window['WindowBounds'])[2:]]
-tabs = ' with a tab bar' if window.get('ShowTabView') else ''
-if size != [width, height] or tabs:
-    sys.exit(f"Finder saved the window at {size[0]}x{size[1]}{tabs} instead of {width}x{height}. "
+if size != [width, height]:
+    sys.exit(f"Finder saved the window at {size[0]}x{size[1]} instead of {width}x{height}. "
              "Run ./dmg.sh again and leave Finder alone meanwhile.")
+if not window.get('ShowTabView'):
+    sys.exit()
+
+record = d[start:end]
+trailer = record[-TRAILER:]
+offset_size, ref_size = trailer[6], trailer[7]
+top, table = int.from_bytes(trailer[16:24], 'big'), int.from_bytes(trailer[24:32], 'big')
+def offset(ref):
+    return int.from_bytes(record[table + ref * offset_size:table + (ref + 1) * offset_size], 'big')
+def ref_at(position):
+    return int.from_bytes(record[position:position + ref_size], 'big')
+# A short dictionary: a marker byte with the count, the keys' references, then the values' in the same order.
+keys = list(window)
+values = offset(top) + 1 + len(keys) * ref_size
+value = offset(ref_at(values + keys.index('ShowTabView') * ref_size))
+if record[value] != TRUE:
+    sys.exit("Couldn't find the tab bar in the window Finder saved.")
+d[start + value] = FALSE
+if plistlib.loads(bytes(d[start:end])) != window | {'ShowTabView': False}:
+    sys.exit("Couldn't switch off the tab bar in the window Finder saved.")
+open(path, 'wb').write(d)
+print("Switched off the tab bar Finder saved with the window")
 PYEOF
 
 # The disk icon goes on last: hdiutil leaves it out of -srcfolder, and Finder drops it while it lays out the window.

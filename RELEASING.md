@@ -65,6 +65,7 @@ DEVELOPER_ID="Developer ID Application: Jane Appleseed (ABCDE12345)" NOTARY_PROF
 - **👤** The first time, macOS asks whether Terminal may control Finder: click **Allow**. `dmg.sh` lays out the installer window through Finder.
 - **👤** The script closes Finder's windows, then opens and closes the installer window. Leave Finder alone for about 15 seconds.
 - If it stops with "Finder saved the window at … instead of 640x400", run it again.
+- On macOS 27 it also prints "Switched off the tab bar Finder saved with the window". That's expected: Finder there saves every window with its tab bar, and the script removes it from the installer.
 - Apple's notarization takes a few minutes. The script ends with "The staple and validate action worked!" and "Made build/Saytap.dmg".
 
 ## 6. Check it
@@ -98,6 +99,12 @@ When the app in `~/Applications/Saytap.app` is already signed and only `dmg.sh` 
 
 3. Check the notarization profile as in step 3.
 4. Run steps 5 and 6.
+
+If the signed app is somewhere else, for example in `build/release/Saytap.app`, check that one in step 2 and pass its path to `dmg.sh`:
+
+```bash
+DEVELOPER_ID="Developer ID Application: Jane Appleseed (ABCDE12345)" NOTARY_PROFILE=saytap-notary ./dmg.sh build/release/Saytap.app
+```
 
 ## When notarization fails
 
