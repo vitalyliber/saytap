@@ -8,7 +8,8 @@ The double tap only counts when ⌥ is pressed on its own: two quick taps, each 
 - Pick the voice speed in the menu bar icon → **Speed**: Very slow, Slow, Normal, Fast or Very fast. The app remembers it.
 - The pop-up closes on Esc, on a click anywhere else, or after 10 seconds. It stays open while the cursor is over it.
 - Translations come from Google Translate's public endpoint, so the selected text is sent to Google.
-- Pick the voice in the menu bar icon → **Voice**: it lists the installed Premium and Enhanced English voices. **Automatic** uses the best installed one: Premium or Enhanced first, then en-US. **Download more voices…** at the bottom of that menu opens System Settings → Accessibility → Read & Speak; install voices there under System voice → Manage Voices. They show up in the menu without restarting the app.
+- Pick the voice in the menu bar icon → **Voice**: it lists the installed Premium and Enhanced English voices. **Automatic** uses the best installed one: Premium or Enhanced first, then en-US. **Download more Apple voices…** opens System Settings → Accessibility → Read & Speak; install voices there under System voice → Manage Voices. They show up in the menu without restarting the app.
+- The same menu has **Phonon** voices (Harper, Hadley, Everly, Maeve, Edwin, Spencer) when the optional `ptts` command is installed (step 7 of Install). [Phonon](https://gradium.ai/phonon) is Gradium's open text-to-speech model; it runs on the Mac, so the text isn't sent anywhere. A word takes about 0.2 s before it plays. If `ptts` is missing or fails, the app speaks with the Apple voice instead.
 
 ## Install
 
@@ -90,6 +91,22 @@ Select a word in any app, for example in Notes, and tap ⌥ twice. You should he
 
 To start the app at login, add `~/Applications/Word Popup.app` in System Settings → General → Login Items.
 
+### 7. Optional: Phonon voices
+
+Phonon needs macOS 15 or later; on an Intel Mac, a CPU with AVX2. Install Gradium's `ptts` command with [Homebrew](https://brew.sh):
+
+```bash
+brew install gradium-ai/tap/ptts
+```
+
+Download the model (about 100 MB, cached in `~/.cache/huggingface`) and the menu's voices once, so the first look-up doesn't wait for them:
+
+```bash
+for voice in Harper Hadley Everly Maeve Edwin Spencer; do ptts --lang en --voice "$voice" -o /tmp/phonon-check.wav -- "Hello"; done; rm /tmp/phonon-check.wav
+```
+
+Then choose a voice marked **(Phonon)** in the menu bar icon → **Voice**. The app finds `ptts` in `/opt/homebrew/bin` or `/usr/local/bin`. To offer other voices, change `PHONON_VOICES` in `Sources/main.swift`; `ptts --list-voices` lists them all.
+
 ## Troubleshooting
 
 - **The app asks for Accessibility on every launch, or the log says `Accessibility trusted: 0` although Word Popup is switched on.** The saved entry belongs to an older build. Removing and re-adding the app in System Settings doesn't always replace it. Reset it, then switch it on again from the app's prompt:
@@ -109,6 +126,13 @@ To start the app at login, add `~/Applications/Word Popup.app` in System Setting
 pkill -x WordPopup; rm -rf ~/Applications/Word\ Popup.app
 tccutil reset Accessibility local.vitaly.word-popup
 defaults delete local.vitaly.word-popup
+```
+
+If Phonon was installed:
+
+```bash
+brew uninstall ptts
+rm -rf ~/.cache/huggingface/hub/models--gradium--phonon-31m-en ~/.cache/huggingface/hub/models--gradium--phonon-voices
 ```
 
 **👤** Then delete the **Word Popup Signing** certificate in Keychain Access, from both the login and the System keychain.

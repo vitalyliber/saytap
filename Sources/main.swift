@@ -8,12 +8,13 @@ let TARGET_LANGUAGE = "ru"
 let SPEECH_LANGUAGE_PREFIX = "en"
 let PREFERRED_SPEECH_REGION = "en-US"
 
-let SPEECH_SPEEDS: [(title: String, rate: Float)] = [
-    ("Very slow", 0.3),
-    ("Slow", 0.4),
-    ("Normal", AVSpeechUtteranceDefaultSpeechRate),
-    ("Fast", 0.55),
-    ("Very fast", 0.6),
+// Phonon's duration_delta only stretches speech by about ±10%, so the outer presets also change the playback rate.
+let SPEECH_SPEEDS: [(title: String, rate: Float, phononDelta: Double, phononPlaybackRate: Float)] = [
+    ("Very slow", 0.3, 0.3, 0.75),
+    ("Slow", 0.4, 0.3, 1),
+    ("Normal", AVSpeechUtteranceDefaultSpeechRate, 0, 1),
+    ("Fast", 0.55, -0.3, 1),
+    ("Very fast", 0.6, -0.3, 1.25),
 ]
 let SPEECH_RATE_KEY = "speechRate"
 let SPEED_SAMPLE = "This is how fast I speak."
@@ -21,6 +22,12 @@ let VOICE_KEY = "voiceIdentifier"
 let AUTOMATIC_VOICE_TITLE = "Automatic (best installed)"
 let VOICE_SAMPLE = "Hello, this is how I sound."
 let VOICE_SETTINGS_URL = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent")!
+
+let PHONON_VOICES = ["Harper", "Hadley", "Everly", "Maeve", "Edwin", "Spencer"]
+let PHONON_VOICE_PREFIX = "phonon:"
+let PHONON_LANGUAGE = "en"
+let PHONON_EXECUTABLES = ["/opt/homebrew/bin/ptts", "/usr/local/bin/ptts"]
+let PHONON_INSTALL_HINT = "brew install gradium-ai/tap/ptts"
 
 let HOTKEY_KEY_CODE = UInt32(kVK_ANSI_T)
 let HOTKEY_MODIFIERS = UInt32(controlKey | optionKey)
@@ -167,11 +174,26 @@ enum Translator {
 
 final class Speaker {
     private let synthesizer = AVSpeechSynthesizer()
+    private let phonon = PhononSpeaker()
     var rate = AVSpeechUtteranceDefaultSpeechRate
     var voiceIdentifier: String?
 
+    // A Phonon voice falls back to the Apple voice when ptts is missing or fails.
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
+        phonon.stop()
+        guard let identifier = voiceIdentifier, identifier.hasPrefix(PHONON_VOICE_PREFIX) else {
+            speakWithApple(text)
+            return
+        }
+        let speed = SPEECH_SPEEDS.first { $0.rate == rate } ?? SPEECH_SPEEDS.first { $0.rate == AVSpeechUtteranceDefaultSpeechRate }!
+        phonon.speak(text, voice: String(identifier.dropFirst(PHONON_VOICE_PREFIX.count)),
+                     delta: speed.phononDelta, playbackRate: speed.phononPlaybackRate) { [weak self] in
+            self?.speakWithApple(text)
+        }
+    }
+
+    private func speakWithApple(_ text: String) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = rate
@@ -193,6 +215,91 @@ final class Speaker {
                 if lhsPreferred != (rhs.language == PREFERRED_SPEECH_REGION) { return lhsPreferred }
                 return lhs.name < rhs.name
             }
+    }
+}
+
+// Runs the ptts command for each phrase. It first runs offline: asking Hugging Face for updates takes
+// most of a second. Only a voice that isn't downloaded yet needs the online run.
+final class PhononSpeaker {
+    private var process: Process?
+    private var player: AVAudioPlayer?
+    private var request = 0
+    private var cached: (key: String, file: URL)?
+
+    static var executable: URL? {
+        PHONON_EXECUTABLES.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+    }
+
+    func speak(_ text: String, voice: String, delta: Double, playbackRate: Float, onFailure: @escaping () -> Void) {
+        request += 1
+        let current = request
+        let key = "\(voice)|\(delta)|\(text)"
+        if let cached, cached.key == key {
+            play(cached.file, rate: playbackRate)
+            return
+        }
+        guard let executable = PhononSpeaker.executable else {
+            onFailure()
+            return
+        }
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("word-popup-\(current).wav")
+        let finish = { [weak self] (succeeded: Bool) in
+            guard let self, self.request == current else { return }
+            if succeeded {
+                self.cached.map { try? FileManager.default.removeItem(at: $0.file) }
+                self.cached = (key, file)
+                self.play(file, rate: playbackRate)
+            } else {
+                onFailure()
+            }
+        }
+        generate(executable, text: text, voice: voice, delta: delta, to: file, offline: true) { [weak self] succeeded in
+            guard let self, self.request == current else { return }
+            if succeeded {
+                finish(true)
+            } else {
+                self.generate(executable, text: text, voice: voice, delta: delta, to: file, offline: false, completion: finish)
+            }
+        }
+    }
+
+    // Also invalidates the running request, so a terminated run doesn't fall back to speaking stale text.
+    func stop() {
+        request += 1
+        process?.terminate()
+        process = nil
+        player?.stop()
+    }
+
+    private func generate(_ executable: URL, text: String, voice: String, delta: Double, to file: URL, offline: Bool,
+                          completion: @escaping (Bool) -> Void) {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["--lang", PHONON_LANGUAGE, "--voice", voice, "--condition", "duration_delta=\(delta)",
+                             "-o", file.path, "--", text]
+        var environment = ProcessInfo.processInfo.environment
+        if offline { environment["HF_HUB_OFFLINE"] = "1" }
+        process.environment = environment
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { finished in
+            let succeeded = finished.terminationReason == .exit && finished.terminationStatus == 0
+            DispatchQueue.main.async { completion(succeeded) }
+        }
+        do {
+            try process.run()
+            self.process = process
+        } catch {
+            completion(false)
+        }
+    }
+
+    private func play(_ file: URL, rate: Float) {
+        player = try? AVAudioPlayer(contentsOf: file)
+        player?.enableRate = true
+        player?.rate = rate
+        player?.play()
     }
 }
 
@@ -519,8 +626,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for voice in Speaker.englishVoices() where voice.quality != .default {
             addVoiceOption(voiceTitle(voice), identifier: voice.identifier, to: menu)
         }
+        menu.addItem(withTitle: "Download more Apple voices…", action: #selector(openVoiceSettings), keyEquivalent: "").target = self
+
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Download more voices…", action: #selector(openVoiceSettings), keyEquivalent: "").target = self
+        guard PhononSpeaker.executable != nil else {
+            menu.addItem(withTitle: "Phonon voices need: \(PHONON_INSTALL_HINT)", action: nil, keyEquivalent: "")
+            return
+        }
+        for name in PHONON_VOICES {
+            addVoiceOption("\(name) (Phonon)", identifier: PHONON_VOICE_PREFIX + name, to: menu)
+        }
     }
 
     @objc private func openVoiceSettings() {
