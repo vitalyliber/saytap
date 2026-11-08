@@ -1,5 +1,5 @@
 import Foundation
-@testable import WordPopup
+@testable import Saytap
 
 enum Fixture {
     static func data(_ name: String) -> Data {

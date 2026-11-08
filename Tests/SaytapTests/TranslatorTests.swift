@@ -1,5 +1,5 @@
 import Testing
-@testable import WordPopup
+@testable import Saytap
 
 struct TranslatorTests {
     let fromDictionary = Translation(text: "from the dictionary", phonetic: nil, dictionary: [])

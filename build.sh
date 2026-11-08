@@ -1,9 +1,9 @@
 #!/bin/zsh
-# Builds Word Popup.app into ~/Applications and starts it.
+# Builds Saytap.app into ~/Applications and starts it.
 set -euo pipefail
 cd "${0:A:h}"
 
-APP="$HOME/Applications/Word Popup.app"
+APP="$HOME/Applications/Saytap.app"
 CERTIFICATE="Word Popup Signing"
 # The Phonon release whose Core ML model the app ships; Package.swift pins the same version of the package.
 PHONON_VERSION="0.6.0"
@@ -12,7 +12,7 @@ MODEL_SHA256="2869326ab074f55ed5b644e68b1befef69dc51545b73296d49f5b4dab14c4218"
 MODELS="build/Models-$PHONON_VERSION"
 
 if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "Word Popup needs a Mac with Apple silicon: Phonon runs on its Neural Engine." >&2
+  echo "Saytap needs a Mac with Apple silicon: Phonon runs on its Neural Engine." >&2
   exit 1
 fi
 
@@ -46,13 +46,13 @@ if [[ ! -f "$ICON" || icon.swift -nt "$ICON" ]]; then
 fi
 
 swift build -c release --arch arm64
-BINARY="$(swift build -c release --arch arm64 --show-bin-path)/WordPopup"
+BINARY="$(swift build -c release --arch arm64 --show-bin-path)/Saytap"
 
-pkill -x WordPopup || true
+pkill -x Saytap || true
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
-cp "$BINARY" "$APP/Contents/MacOS/WordPopup"
+cp "$BINARY" "$APP/Contents/MacOS/Saytap"
 cp -R "$MODELS" "$APP/Contents/Resources/Models"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 # A real certificate keeps the Accessibility permission across rebuilds; an ad-hoc signature

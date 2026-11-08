@@ -1,5 +1,5 @@
 import Testing
-@testable import WordPopup
+@testable import Saytap
 
 struct TargetLanguageTests {
     let languages = AppDelegate.targetLanguages(available: ["de", "zh-Hans", "ru", "zh-Hant", "es"],

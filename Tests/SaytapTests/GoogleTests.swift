@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import WordPopup
+@testable import Saytap
 
 struct GoogleTests {
     let url = URL(string: "https://translate.googleapis.com/translate_a/single")!

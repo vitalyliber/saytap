@@ -80,7 +80,7 @@ let POPUP_FADE_IN_KEY = "fadeIn"
 let MAX_DICTIONARY_TERMS = 6
 let ESCAPE_KEY_CODE = UInt16(kVK_Escape)
 
-let SUPPORT_FOLDER = "Word Popup"
+let SUPPORT_FOLDER = "Saytap"
 let HISTORY_FILE = "history.json"
 let HISTORY_WINDOW_SIZE = NSSize(width: 720, height: 560)
 let HISTORY_ROW_HEIGHT: CGFloat = 40

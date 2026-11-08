@@ -1,11 +1,11 @@
-# Word Popup
+# Saytap
 
 A menu bar app for macOS. Select a word in any app and tap **⌥ Option twice** (or press **⌃⌥T**): the app reads it aloud and shows its translation in a floating pop-up next to the cursor.
 
 The double tap only counts when ⌥ is pressed on its own: two quick taps, each shorter than 0.3 s and less than 0.4 s apart. Any key, click or other modifier in between cancels it, so ⌥ shortcuts keep working.
 
 - Click anywhere on the pop-up to hear the word again.
-- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Long phrases and translations wrap, so they show in full. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Word Popup/history.json` and never leaves the Mac.
+- Every translated word is saved with its translation. The menu bar icon → **History…** lists them, newest first, with how many times each was looked up. Long phrases and translations wrap, so they show in full. Click a word to hear it, search by word or translation, and press ⌫ to delete the selected words. A word looked up again moves to the top, and a phrase looked up again reuses its saved translation instead of asking Google; delete it from the history to translate it afresh. The history is kept in `~/Library/Application Support/Saytap/history.json` and never leaves the Mac.
 - Pick the voice speed in the menu bar icon → **Speed**: 0.25, 0.5, 0.75, Normal, 1.25, 1.5, 1.75 or 2, as on YouTube. The app remembers it.
 - The pop-up stays until you press Esc or click anywhere else.
 - Pick the language to translate into in the menu bar icon → **Translate to**. By default it's the first language other than English in System Settings → General → Language & Region. Languages whose dictionary isn't downloaded are marked; choosing one starts the download (about a minute) and offers macOS's dialog to download it for offline translation. Until they're there, the menu shows what's missing under Translate to.
@@ -78,7 +78,7 @@ security dump-trust-settings -d | grep -A3 "Word Popup Signing"
 ./build.sh
 ```
 
-This builds the app with Swift Package Manager, installs `~/Applications/Word Popup.app` and starts it. A speech bubble icon appears in the menu bar. The first build also fetches Phonon's Swift package (about 50 MB) and its Core ML model (about 140 MB, kept in `build/` for later builds).
+This builds the app with Swift Package Manager, installs `~/Applications/Saytap.app` and starts it. A speech bubble icon appears in the menu bar. The first build also fetches Phonon's Swift package (about 50 MB) and its Core ML model (about 140 MB, kept in `build/` for later builds).
 
 On the first launch the app compiles the model for this Mac, which takes several seconds; a word looked up meanwhile is spoken once it's done, and the pop-up says the voice is being prepared. Later launches load it in about half a second.
 
@@ -86,12 +86,12 @@ On the first launch the app compiles the model for this Mac, which takes several
 
 ### 5. Allow Accessibility
 
-**👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. The person clicks **Open System Settings** and switches **Word Popup** on in Privacy & Security → Accessibility.
+**👤** On first launch the app asks for Accessibility access, which it needs to read the selected text. The person clicks **Open System Settings** and switches **Saytap** on in Privacy & Security → Accessibility.
 
 Then restart the app and check that it has the permission. The log must say `Accessibility trusted: 1`:
 
 ```bash
-pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 2; cat /tmp/word-popup.log
+pkill -x Saytap; open --stderr /tmp/saytap.log ~/Applications/Saytap.app; sleep 2; cat /tmp/saytap.log
 ```
 
 ### 6. Pick the language
@@ -106,10 +106,10 @@ To start the app at login, turn on the menu bar icon → **Launch at Login**.
 
 ## Troubleshooting
 
-- **The app asks for Accessibility on every launch, or the log says `Accessibility trusted: 0` although Word Popup is switched on.** The saved entry belongs to an older build. Removing and re-adding the app in System Settings doesn't always replace it. Reset it, then switch it on again from the app's prompt:
+- **The app asks for Accessibility on every launch, or the log says `Accessibility trusted: 0` although Saytap is switched on.** The saved entry belongs to an older build. Removing and re-adding the app in System Settings doesn't always replace it. Reset it, then switch it on again from the app's prompt:
 
   ```bash
-  tccutil reset Accessibility local.vitaly.word-popup; pkill -x WordPopup; open ~/Applications/Word\ Popup.app
+  tccutil reset Accessibility local.vitaly.saytap; pkill -x Saytap; open ~/Applications/Saytap.app
   ```
 
   If that doesn't help, check that step 3 was done.
@@ -119,18 +119,18 @@ To start the app at login, turn on the menu bar icon → **Launch at Login**.
 - **The pop-up appears, but there's a beep instead of the word.** Phonon failed to load or speak, and the pop-up's last line says why. For the full error, start the app with its log, look up a word, and read the line starting with `Phonon failed`:
 
   ```bash
-  pkill -x WordPopup; open --stderr /tmp/word-popup.log ~/Applications/Word\ Popup.app; sleep 10; cat /tmp/word-popup.log
+  pkill -x Saytap; open --stderr /tmp/saytap.log ~/Applications/Saytap.app; sleep 10; cat /tmp/saytap.log
   ```
 
-  If the compiled model is broken, delete `~/Library/Application Support/Word Popup/Models` and restart the app: it copies and compiles the model again.
+  If the compiled model is broken, delete `~/Library/Application Support/Saytap/Models` and restart the app: it copies and compiles the model again.
 
 ## Uninstall
 
 ```bash
-pkill -x WordPopup; rm -rf ~/Applications/Word\ Popup.app
-tccutil reset Accessibility local.vitaly.word-popup
-defaults delete local.vitaly.word-popup
-rm -rf ~/Library/Application\ Support/Word\ Popup
+pkill -x Saytap; rm -rf ~/Applications/Saytap.app
+tccutil reset Accessibility local.vitaly.saytap
+defaults delete local.vitaly.saytap
+rm -rf ~/Library/Application\ Support/Saytap
 ```
 
 **👤** Then delete the **Word Popup Signing** certificate in Keychain Access, from both the login and the System keychain.

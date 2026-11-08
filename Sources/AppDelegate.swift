@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let word = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if word.isEmpty && !AXIsProcessTrusted() {
                 self.popup.show(word: "", translation: nil,
-                                status: "Word Popup can't read the selection without the Accessibility permission. Open the menu bar icon → Allow Accessibility…",
+                                status: "Saytap can't read the selection without the Accessibility permission. Open the menu bar icon → Allow Accessibility…",
                                 at: NSEvent.mouseLocation)
             } else if word.isEmpty {
                 NSSound.beep()
@@ -223,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
         let main = NSMenu()
-        for submenu in [NSMenu(title: "Word Popup"), edit, window] {
+        for submenu in [NSMenu(title: "Saytap"), edit, window] {
             let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
             item.submenu = submenu
             main.addItem(item)
@@ -233,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setUpMenu() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Word Popup")
+        item.button?.image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Saytap")
 
         let menu = statusMenu
         menu.delegate = self
@@ -252,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(loginItem)
         menu.addItem(accessibilityItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Word Popup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Saytap", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
         item.menu = menu
         statusItem = item

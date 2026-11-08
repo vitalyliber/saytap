@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Word Popup</string>
+	<string>Saytap</string>
 	<key>CFBundleExecutable</key>
-	<string>WordPopup</string>
+	<string>Saytap</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.vitaly.word-popup</string>
+	<string>local.vitaly.saytap</string>
 	<key>CFBundleName</key>
-	<string>Word Popup</string>
+	<string>Saytap</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

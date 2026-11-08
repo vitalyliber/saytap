@@ -1,5 +1,5 @@
 import Testing
-@testable import WordPopup
+@testable import Saytap
 
 struct DictionaryTests {
     let harbour = BilingualDictionary.translation(from: Fixture.records("dictionary-harbours"))

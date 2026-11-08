@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "WordPopup",
+    name: "Saytap",
     platforms: [.macOS("26.0")],
     dependencies: [
         // build.sh downloads the Core ML model of the same release: keep the two versions together.
@@ -10,15 +10,15 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "WordPopup",
+            name: "Saytap",
             dependencies: [.product(name: "ptts", package: "xn-ptts")],
             path: "Sources",
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedFramework("Cocoa"), .linkedFramework("Carbon")]
         ),
         .testTarget(
-            name: "WordPopupTests",
-            dependencies: ["WordPopup"],
+            name: "SaytapTests",
+            dependencies: ["Saytap"],
             resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

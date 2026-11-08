@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import WordPopup
+@testable import Saytap
 
 struct HistoryTests {
     let harbour = Translation(text: "гавань", phonetic: nil, dictionary: [])
