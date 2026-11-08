@@ -542,7 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Speak & translate selection (\(DOUBLE_TAP_LABEL) or \(HOTKEY_LABEL))", action: #selector(lookUpSelection), keyEquivalent: "")
         menu.addItem(speedMenuItem())
         menu.addItem(voiceMenuItem())
-        menu.addItem(withTitle: "Accessibility settings…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
+        menu.addItem(withTitle: "Accessibility permission…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Word Popup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
